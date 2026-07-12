@@ -1018,6 +1018,212 @@
                 );
             };
 
+            const ImagePreviewModal = ({ src, onClose }) => {
+                const [transform, setTransform] = useState({ scale: 1, x: 0, y: 0 });
+                const viewportRef = useRef(null);
+                const pointersRef = useRef(new Map());
+                const gestureRef = useRef(null);
+                const movedRef = useRef(false);
+
+                useEffect(() => {
+                    setTransform({ scale: 1, x: 0, y: 0 });
+                    pointersRef.current.clear();
+                    gestureRef.current = null;
+                    movedRef.current = false;
+                }, [src]);
+
+                const clamp = (value, min, max) => Math.min(max, Math.max(min, value));
+
+                const clampTransform = (next) => {
+                    const viewport = viewportRef.current;
+                    if (!viewport || next.scale <= 1) return { scale: Math.max(1, next.scale), x: 0, y: 0 };
+
+                    const rect = viewport.getBoundingClientRect();
+                    const maxX = (rect.width * (next.scale - 1)) / 2;
+                    const maxY = (rect.height * (next.scale - 1)) / 2;
+                    return {
+                        scale: clamp(next.scale, 1, 5),
+                        x: clamp(next.x, -maxX, maxX),
+                        y: clamp(next.y, -maxY, maxY)
+                    };
+                };
+
+                const getPoint = (event) => ({ x: event.clientX, y: event.clientY });
+                const getDistance = (a, b) => Math.hypot(a.x - b.x, a.y - b.y);
+                const getCenter = (a, b) => ({ x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 });
+
+                const zoomTo = (nextScale) => {
+                    setTransform(prev => clampTransform({
+                        scale: clamp(nextScale, 1, 5),
+                        x: prev.x,
+                        y: prev.y
+                    }));
+                };
+
+                const resetZoom = () => {
+                    setTransform({ scale: 1, x: 0, y: 0 });
+                };
+
+                const handlePointerDown = (event) => {
+                    event.preventDefault();
+                    event.currentTarget.setPointerCapture?.(event.pointerId);
+                    pointersRef.current.set(event.pointerId, getPoint(event));
+                    movedRef.current = false;
+
+                    const points = Array.from(pointersRef.current.values());
+                    if (points.length === 1) {
+                        gestureRef.current = {
+                            type: 'pan',
+                            start: points[0],
+                            startTransform: transform
+                        };
+                    } else if (points.length >= 2) {
+                        const [a, b] = points;
+                        const center = getCenter(a, b);
+                        const rect = viewportRef.current.getBoundingClientRect();
+                        const viewportCenter = { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 };
+                        gestureRef.current = {
+                            type: 'pinch',
+                            startDistance: getDistance(a, b),
+                            startCenter: center,
+                            startScale: transform.scale,
+                            startTransform: transform,
+                            contentPoint: {
+                                x: (center.x - viewportCenter.x - transform.x) / transform.scale,
+                                y: (center.y - viewportCenter.y - transform.y) / transform.scale
+                            },
+                            viewportCenter
+                        };
+                    }
+                };
+
+                const handlePointerMove = (event) => {
+                    if (!pointersRef.current.has(event.pointerId)) return;
+                    event.preventDefault();
+                    pointersRef.current.set(event.pointerId, getPoint(event));
+
+                    const points = Array.from(pointersRef.current.values());
+                    const gesture = gestureRef.current;
+                    if (!gesture) return;
+
+                    if (gesture.type === 'pinch' && points.length >= 2) {
+                        const [a, b] = points;
+                        const center = getCenter(a, b);
+                        const nextScale = clamp(gesture.startScale * (getDistance(a, b) / gesture.startDistance), 1, 5);
+                        movedRef.current = true;
+                        setTransform(clampTransform({
+                            scale: nextScale,
+                            x: center.x - gesture.viewportCenter.x - gesture.contentPoint.x * nextScale,
+                            y: center.y - gesture.viewportCenter.y - gesture.contentPoint.y * nextScale
+                        }));
+                    } else if (gesture.type === 'pan' && points.length === 1 && transform.scale > 1) {
+                        const current = points[0];
+                        const dx = current.x - gesture.start.x;
+                        const dy = current.y - gesture.start.y;
+                        if (Math.abs(dx) > 2 || Math.abs(dy) > 2) movedRef.current = true;
+                        setTransform(clampTransform({
+                            scale: gesture.startTransform.scale,
+                            x: gesture.startTransform.x + dx,
+                            y: gesture.startTransform.y + dy
+                        }));
+                    }
+                };
+
+                const handlePointerEnd = (event) => {
+                    pointersRef.current.delete(event.pointerId);
+                    const points = Array.from(pointersRef.current.values());
+                    if (points.length === 1) {
+                        gestureRef.current = {
+                            type: 'pan',
+                            start: points[0],
+                            startTransform: transform
+                        };
+                    } else {
+                        gestureRef.current = null;
+                    }
+                };
+
+                const handleBackdropClick = (event) => {
+                    if (event.target === event.currentTarget && !movedRef.current) onClose();
+                };
+
+                const handleDoubleClick = (event) => {
+                    event.stopPropagation();
+                    if (transform.scale > 1) {
+                        resetZoom();
+                    } else {
+                        zoomTo(2.2);
+                    }
+                };
+
+                return (
+                    <div
+                        className="fixed inset-0 z-50 bg-black/95 flex flex-col"
+                        onClick={handleBackdropClick}
+                    >
+                        <div className="absolute top-4 right-4 z-10 flex items-center gap-2">
+                            <button
+                                type="button"
+                                onClick={(event) => { event.stopPropagation(); zoomTo(transform.scale - 0.5); }}
+                                className="text-white hover:text-slate-300 p-2 bg-slate-900/80 rounded-full border border-slate-700"
+                                title="縮小"
+                            >
+                                <i data-lucide="minus" className="w-5 h-5"></i>
+                            </button>
+                            <button
+                                type="button"
+                                onClick={(event) => { event.stopPropagation(); resetZoom(); }}
+                                className="text-white hover:text-slate-300 px-3 py-2 bg-slate-900/80 rounded-full border border-slate-700 text-xs font-semibold"
+                                title="表示をリセット"
+                            >
+                                {Math.round(transform.scale * 100)}%
+                            </button>
+                            <button
+                                type="button"
+                                onClick={(event) => { event.stopPropagation(); zoomTo(transform.scale + 0.5); }}
+                                className="text-white hover:text-slate-300 p-2 bg-slate-900/80 rounded-full border border-slate-700"
+                                title="拡大"
+                            >
+                                <i data-lucide="plus" className="w-5 h-5"></i>
+                            </button>
+                            <button
+                                type="button"
+                                onClick={(event) => { event.stopPropagation(); onClose(); }}
+                                className="text-white hover:text-slate-300 p-2 bg-slate-900/80 rounded-full border border-slate-700"
+                                title="閉じる"
+                            >
+                                <i data-lucide="x" className="w-5 h-5"></i>
+                            </button>
+                        </div>
+
+                        <div
+                            ref={viewportRef}
+                            className={`flex-1 flex items-center justify-center overflow-hidden ${transform.scale > 1 ? 'cursor-grab' : 'cursor-zoom-in'}`}
+                            style={{ touchAction: 'none' }}
+                            onPointerDown={handlePointerDown}
+                            onPointerMove={handlePointerMove}
+                            onPointerUp={handlePointerEnd}
+                            onPointerCancel={handlePointerEnd}
+                            onDoubleClick={handleDoubleClick}
+                        >
+                            <img
+                                src={src}
+                                alt="Expanded preview"
+                                draggable="false"
+                                className="max-w-full max-h-full rounded-xl object-contain shadow-2xl select-none"
+                                style={{
+                                    transform: `translate3d(${transform.x}px, ${transform.y}px, 0) scale(${transform.scale})`,
+                                    transition: pointersRef.current.size ? 'none' : 'transform 120ms ease-out',
+                                    transformOrigin: 'center center',
+                                    willChange: 'transform'
+                                }}
+                                onClick={(event) => event.stopPropagation()}
+                            />
+                        </div>
+                    </div>
+                );
+            };
+
             return (
                 <div className="flex h-full w-full bg-slate-950 text-slate-100 font-sans antialiased overflow-hidden relative">
                     
@@ -1556,15 +1762,7 @@
 
                     {/* 拡大プレビュー */}
                     {previewImage && (
-                        <div 
-                            className="fixed inset-0 z-50 bg-black/95 flex items-center justify-center p-4 cursor-zoom-out"
-                            onClick={() => setPreviewImage(null)}
-                        >
-                            <button className="absolute top-4 right-4 text-white hover:text-slate-300 p-2 bg-slate-900/80 rounded-full">
-                                <i data-lucide="x" className="w-6 h-6"></i>
-                            </button>
-                            <img src={previewImage} alt="Expanded preview" className="max-w-full max-h-full rounded-xl object-contain shadow-2xl" />
-                        </div>
+                        <ImagePreviewModal src={previewImage} onClose={() => setPreviewImage(null)} />
                     )}
 
                 </div>
