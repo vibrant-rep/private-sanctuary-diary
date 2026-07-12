@@ -159,9 +159,11 @@ function normalizeSummary(value) {
 }
 
 function fallbackSummary({ title, description, articleText }) {
-  if (articleText && articleText.length > 80) {
-    return articleText
+  const source = description && description.length > 80 ? description : articleText;
+  if (source && source.length > 80) {
+    return source
       .replace(/\s+/g, " ")
+      .replace(/^(概要|はじめに|対象読者|導入|本文)\s+/, "")
       .split(/[。.!?]/)
       .filter(Boolean)
       .slice(0, 2)
@@ -170,9 +172,9 @@ function fallbackSummary({ title, description, articleText }) {
       .trim();
   }
 
-  const source = description || title || "";
-  if (!source.trim()) return "";
-  return source
+  const shortSource = description || title || "";
+  if (!shortSource.trim()) return "";
+  return shortSource
     .replace(/[\r\n]+/g, " ")
     .replace(/\s+/g, " ")
     .split(/[。.!?]/)[0]
@@ -180,30 +182,88 @@ function fallbackSummary({ title, description, articleText }) {
     .trim();
 }
 
-async function generateSummary(env, { title, description, siteName, articleText }) {
+function buildSummaryPrompt({ title, description, siteName, articleText }) {
   const sourceText = [
     `タイトル: ${title}`,
     `概要: ${description}`,
     `サイト: ${siteName}`,
     `本文抜粋: ${articleText}`,
   ].filter(line => line.replace(/^[^:]+:\s*/, "").trim()).join("\n");
+
+  return {
+    sourceText,
+    instruction: `次のWeb記事を、日本語70〜110字程度の自然な文章で要約してください。タイトルの言い換えではなく、本文から「主張」「具体例」「読者に役立つ点」を拾ってください。硬い直訳調、同じ語尾の連続、「〜する際に」の多用、URL、サイト名、箇条書き、前置き、宣伝口調は避けてください。\n\n${sourceText}`,
+  };
+}
+
+async function generateGeminiSummary(env, summaryInput) {
+  if (!env?.GEMINI_API_KEY) return "";
+
+  const model = env.GEMINI_MODEL || "gemini-2.5-flash-lite";
+  const { instruction } = buildSummaryPrompt(summaryInput);
+  const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${env.GEMINI_API_KEY}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      contents: [
+        {
+          role: "user",
+          parts: [
+            {
+              text: `あなたは日本語ネイティブの編集者です。Web記事の内容を、自然で読みやすい読書メモとして要約します。出力は要約文だけにしてください。\n\n${instruction}`,
+            },
+          ],
+        },
+      ],
+      generationConfig: {
+        temperature: 0.35,
+        maxOutputTokens: 180,
+      },
+    }),
+    signal: AbortSignal.timeout(7000),
+  });
+
+  const data = await response.json();
+  if (!response.ok) throw new Error(data.error?.message || `Gemini failed: ${response.status}`);
+
+  return normalizeSummary(
+    data.candidates?.[0]?.content?.parts
+      ?.map(part => part.text || "")
+      .join(" ") || ""
+  );
+}
+
+async function generateSummary(env, { title, description, siteName, articleText }) {
+  const summaryInput = { title, description, siteName, articleText };
+  const { sourceText, instruction } = buildSummaryPrompt(summaryInput);
   if (!env?.AI || !sourceText.trim()) return "";
+
+  try {
+    const geminiSummary = await generateGeminiSummary(env, summaryInput);
+    if (geminiSummary.length >= 24 && geminiSummary !== title) return geminiSummary;
+  } catch (err) {
+    console.warn("Gemini summary failed", err);
+  }
+
+  if (env?.ENABLE_WORKERS_AI_SUMMARY !== "true") {
+    return fallbackSummary({ title, description, articleText });
+  }
 
   try {
     const result = await env.AI.run("@cf/meta/llama-3.2-3b-instruct", {
       messages: [
         {
           role: "system",
-          content: "あなたはWebページの内容を日本語で短く要約する編集者です。出力は要約文だけにしてください。",
+          content: "あなたは日本語ネイティブの編集者です。Web記事の内容を、自然で読みやすい読書メモとして要約します。出力は要約文だけにしてください。",
         },
         {
           role: "user",
-          content: `次のWebページ情報を、日本語80〜120字程度の2文以内で要約してください。タイトルの言い換えではなく、本文から「何が書かれているか」「何が役立つか」を具体的に書いてください。URL、サイト名、箇条書き、前置き、宣伝口調は避けてください。\n\n${sourceText}`,
+          content: instruction,
         },
       ],
-      max_tokens: 180,
-      max_completion_tokens: 220,
-      temperature: 0.2,
+      max_tokens: 160,
+      max_completion_tokens: 200,
+      temperature: 0.35,
     });
 
     const summary = normalizeSummary(getAiResponseText(result));
