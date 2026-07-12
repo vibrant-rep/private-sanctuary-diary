@@ -138,6 +138,37 @@
             const isDeletedNote = (note) => Boolean(note?.deletedAt);
             const getNoteVersion = (note) => Date.parse(note?.deletedAt || note?.updatedAt || note?.createdAt || note?.timestamp || '') || 0;
             const getVisibleNotes = (dayNotes = []) => dayNotes.filter(note => !isDeletedNote(note));
+            const URL_PATTERN = /https?:\/\/[^\s<>"']+/gi;
+
+            const cleanUrl = (url) => url.replace(/[),.、。]+$/g, '');
+            const extractUrls = (text = '') => {
+                const seen = new Set();
+                return (text.match(URL_PATTERN) || [])
+                    .map(cleanUrl)
+                    .filter(url => {
+                        try {
+                            const parsed = new URL(url);
+                            if (!['http:', 'https:'].includes(parsed.protocol) || seen.has(parsed.href)) return false;
+                            seen.add(parsed.href);
+                            return true;
+                        } catch {
+                            return false;
+                        }
+                    });
+            };
+
+            const getUrlMeta = (url) => {
+                try {
+                    const parsed = new URL(url);
+                    return {
+                        href: parsed.href,
+                        host: parsed.hostname.replace(/^www\./, ''),
+                        path: `${parsed.pathname}${parsed.search}`.replace(/\/$/, '') || '/'
+                    };
+                } catch {
+                    return { href: url, host: url, path: '' };
+                }
+            };
 
             // ID重複を排除し、削除情報を優先してお互いの日記を自動マージするGitライクなコア関数
             const mergeNotes = (localNotes, cloudNotes) => {
@@ -682,6 +713,37 @@
             const dateKey = formatDateKey(selectedDate);
             const activeDayNotes = getVisibleNotes(notes[dateKey] || []);
 
+            const UrlCards = ({ content }) => {
+                const urls = extractUrls(content);
+                if (urls.length === 0) return null;
+
+                return (
+                    <div className="space-y-2 pt-1">
+                        {urls.map(url => {
+                            const meta = getUrlMeta(url);
+                            return (
+                                <a
+                                    key={meta.href}
+                                    href={meta.href}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    className="group/link flex items-center gap-3 rounded-lg border border-slate-800 bg-slate-950/70 p-3 hover:border-indigo-700 hover:bg-slate-900 transition-colors"
+                                >
+                                    <div className="w-9 h-9 rounded-lg bg-slate-900 border border-slate-800 text-indigo-400 flex items-center justify-center shrink-0">
+                                        <i data-lucide="link-2" className="w-4 h-4"></i>
+                                    </div>
+                                    <div className="min-w-0 flex-1">
+                                        <p className="text-xs font-semibold text-slate-200 truncate">{meta.host}</p>
+                                        <p className="text-[11px] text-slate-500 truncate">{meta.path}</p>
+                                    </div>
+                                    <i data-lucide="external-link" className="w-3.5 h-3.5 text-slate-600 group-hover/link:text-indigo-400 shrink-0"></i>
+                                </a>
+                            );
+                        })}
+                    </div>
+                );
+            };
+
             const DriveImage = ({ fileId }) => {
                 const cachedUrl = imageBlobCache[fileId];
 
@@ -1085,6 +1147,8 @@
                                                         <p className="text-sm text-slate-200 leading-relaxed whitespace-pre-wrap break-words">
                                                             {msg.content}
                                                         </p>
+
+                                                        <UrlCards content={msg.content} />
                                                     </div>
 
                                                     <button 
