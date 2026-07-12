@@ -106,7 +106,8 @@
             const [diaryFileId, setDiaryFileId] = useState(null);
             const [imageBlobCache, setImageBlobCache] = useState({});
             const [loadingImages, setLoadingImages] = useState({});
-            const [ogpWorkerUrl, setOgpWorkerUrl] = useState(() => localStorage.getItem('ogp_worker_url') || '');
+            const DEFAULT_OGP_WORKER_URL = 'https://private-sanctuary-ogp.vibrant-rep.workers.dev';
+            const [ogpWorkerUrl, setOgpWorkerUrl] = useState(() => localStorage.getItem('ogp_worker_url') || DEFAULT_OGP_WORKER_URL);
             const [urlPreviewCache, setUrlPreviewCache] = useState({});
 
             const [currentOrigin, setCurrentOrigin] = useState('');
