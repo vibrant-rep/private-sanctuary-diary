@@ -62,6 +62,53 @@ function findTitle(html) {
   return decodeHtml(title.replace(/\s+/g, " "));
 }
 
+function stripHtml(value = "") {
+  return decodeHtml(
+    value
+      .replace(/<script[\s\S]*?<\/script>/gi, " ")
+      .replace(/<style[\s\S]*?<\/style>/gi, " ")
+      .replace(/<noscript[\s\S]*?<\/noscript>/gi, " ")
+      .replace(/<svg[\s\S]*?<\/svg>/gi, " ")
+      .replace(/<[^>]+>/g, " ")
+      .replace(/\s+/g, " ")
+  );
+}
+
+function findNextDataArticleText(html) {
+  const nextData = html.match(/<script[^>]+id=["']__NEXT_DATA__["'][^>]*>([\s\S]*?)<\/script>/i)?.[1];
+  if (!nextData) return "";
+
+  try {
+    const data = JSON.parse(nextData);
+    const article = data?.props?.pageProps?.article;
+    const bodyHtml = article?.bodyHtml || article?.body || article?.content || "";
+    return stripHtml(bodyHtml);
+  } catch {
+    return "";
+  }
+}
+
+function findArticleText(html) {
+  const nextDataText = findNextDataArticleText(html);
+  if (nextDataText.length > 120) return nextDataText.slice(0, 3000);
+
+  const candidates = [
+    ...html.matchAll(/<article\b[^>]*>([\s\S]*?)<\/article>/gi),
+    ...html.matchAll(/<main\b[^>]*>([\s\S]*?)<\/main>/gi),
+    ...html.matchAll(/<div\b[^>]*(?:class|id)=["'][^"']*(?:article|entry|post|content|note|body)[^"']*["'][^>]*>([\s\S]*?)<\/div>/gi),
+  ]
+    .map(match => stripHtml(match[1]))
+    .filter(text => text.length > 120)
+    .sort((a, b) => b.length - a.length);
+
+  const text = candidates[0] || stripHtml(html);
+  return text
+    .replace(/関連記事|シェア|ログイン|新規登録|コメント|広告/g, " ")
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, 3000);
+}
+
 function absoluteUrl(value, baseUrl) {
   if (!value) return "";
   try {
@@ -92,30 +139,54 @@ function getAiResponseText(result) {
 }
 
 function normalizeSummary(value) {
-  return value
+  const normalized = value
     .replace(/[\r\n]+/g, " ")
     .replace(/^["'「『\s]+|["'」』\s]+$/g, "")
     .replace(/^AI要約[:：]\s*/i, "")
     .replace(/\s+/g, " ")
-    .trim()
-    .slice(0, 70)
-    .replace(/[、,][^、,]*$/, "")
     .trim();
+
+  if (normalized.length <= 180) return normalized;
+
+  const clipped = normalized.slice(0, 180);
+  const lastSentenceEnd = Math.max(
+    clipped.lastIndexOf("。"),
+    clipped.lastIndexOf("！"),
+    clipped.lastIndexOf("？")
+  );
+  if (lastSentenceEnd > 70) return clipped.slice(0, lastSentenceEnd + 1).trim();
+  return clipped.trim();
 }
 
-function fallbackSummary({ title, description }) {
+function fallbackSummary({ title, description, articleText }) {
+  if (articleText && articleText.length > 80) {
+    return articleText
+      .replace(/\s+/g, " ")
+      .split(/[。.!?]/)
+      .filter(Boolean)
+      .slice(0, 2)
+      .join("。")
+      .slice(0, 140)
+      .trim();
+  }
+
   const source = description || title || "";
   if (!source.trim()) return "";
   return source
     .replace(/[\r\n]+/g, " ")
     .replace(/\s+/g, " ")
     .split(/[。.!?]/)[0]
-    .slice(0, 55)
+    .slice(0, 120)
     .trim();
 }
 
-async function generateSummary(env, { title, description, siteName }) {
-  const sourceText = [title, description, siteName].filter(Boolean).join("\n");
+async function generateSummary(env, { title, description, siteName, articleText }) {
+  const sourceText = [
+    `タイトル: ${title}`,
+    `概要: ${description}`,
+    `サイト: ${siteName}`,
+    `本文抜粋: ${articleText}`,
+  ].filter(line => line.replace(/^[^:]+:\s*/, "").trim()).join("\n");
   if (!env?.AI || !sourceText.trim()) return "";
 
   try {
@@ -127,20 +198,20 @@ async function generateSummary(env, { title, description, siteName }) {
         },
         {
           role: "user",
-          content: `次のWebページ情報を、日本語25文字以内の自然な1行で要約してください。説明ではなく「何のページか」だけを短く書いてください。宣伝口調、URL、サイト名だけの繰り返し、箇条書き、句点は避けてください。\n\n${sourceText}`,
+          content: `次のWebページ情報を、日本語80〜120字程度の2文以内で要約してください。タイトルの言い換えではなく、本文から「何が書かれているか」「何が役立つか」を具体的に書いてください。URL、サイト名、箇条書き、前置き、宣伝口調は避けてください。\n\n${sourceText}`,
         },
       ],
-      max_tokens: 48,
-      max_completion_tokens: 80,
+      max_tokens: 180,
+      max_completion_tokens: 220,
       temperature: 0.2,
     });
 
     const summary = normalizeSummary(getAiResponseText(result));
-    if (summary.length < 8) return fallbackSummary({ title, description });
+    if (summary.length < 24 || summary === title) return fallbackSummary({ title, description, articleText });
     return summary;
   } catch (err) {
     console.warn("Workers AI summary failed", err);
-    return fallbackSummary({ title, description });
+    return fallbackSummary({ title, description, articleText });
   }
 }
 
@@ -191,7 +262,8 @@ async function handleRequest(request, env) {
   const description = findMeta(html, ["og:description", "twitter:description", "description"]);
   const image = absoluteUrl(findMeta(html, ["og:image", "twitter:image", "twitter:image:src"]), targetUrl.href);
   const siteName = findMeta(html, ["og:site_name", "application-name"]) || targetUrl.hostname.replace(/^www\./, "");
-  const summary = await generateSummary(env, { title, description, siteName });
+  const articleText = findArticleText(html);
+  const summary = await generateSummary(env, { title, description, siteName, articleText });
 
   return json({
     url: targetUrl.href,
