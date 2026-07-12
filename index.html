@@ -106,6 +106,8 @@
             const [diaryFileId, setDiaryFileId] = useState(null);
             const [imageBlobCache, setImageBlobCache] = useState({});
             const [loadingImages, setLoadingImages] = useState({});
+            const [ogpWorkerUrl, setOgpWorkerUrl] = useState(() => localStorage.getItem('ogp_worker_url') || '');
+            const [urlPreviewCache, setUrlPreviewCache] = useState({});
 
             const [currentOrigin, setCurrentOrigin] = useState('');
 
@@ -123,6 +125,10 @@
             useEffect(() => {
                 localStorage.setItem('gdrive_diary_notes', JSON.stringify(notes));
             }, [notes]);
+
+            useEffect(() => {
+                localStorage.setItem('ogp_worker_url', ogpWorkerUrl.trim());
+            }, [ogpWorkerUrl]);
 
             useEffect(() => {
                 if (window.lucide) window.lucide.createIcons();
@@ -177,6 +183,23 @@
                     };
                 } catch {
                     return { href: url, host: url, path: '' };
+                }
+            };
+
+            const fetchUrlPreview = async (url) => {
+                const endpoint = ogpWorkerUrl.trim().replace(/\/$/, '');
+                if (!endpoint || urlPreviewCache[url]?.status) return;
+
+                setUrlPreviewCache(prev => ({ ...prev, [url]: { status: 'loading' } }));
+                try {
+                    const response = await fetch(`${endpoint}?url=${encodeURIComponent(url)}`, {
+                        headers: { Accept: 'application/json' }
+                    });
+                    const data = await response.json();
+                    if (!response.ok) throw new Error(data.error || 'URLプレビューの取得に失敗しました');
+                    setUrlPreviewCache(prev => ({ ...prev, [url]: { status: 'ready', data } }));
+                } catch (err) {
+                    setUrlPreviewCache(prev => ({ ...prev, [url]: { status: 'error', error: err.message } }));
                 }
             };
 
@@ -856,12 +879,21 @@
 
             const UrlCards = ({ content }) => {
                 const urls = extractUrls(content);
+                useEffect(() => {
+                    urls.forEach(url => fetchUrlPreview(url));
+                }, [content, ogpWorkerUrl]);
+
                 if (urls.length === 0) return null;
 
                 return (
                     <div className="space-y-2 pt-1">
                         {urls.map(url => {
                             const meta = getUrlMeta(url);
+                            const previewState = urlPreviewCache[url];
+                            const preview = previewState?.data;
+                            const title = preview?.title || meta.host;
+                            const description = preview?.description || meta.path;
+                            const image = preview?.image;
                             return (
                                 <a
                                     key={meta.href}
@@ -870,12 +902,17 @@
                                     rel="noopener noreferrer"
                                     className="group/link flex items-center gap-3 rounded-lg border border-slate-800 bg-slate-950/70 p-3 hover:border-indigo-700 hover:bg-slate-900 transition-colors"
                                 >
-                                    <div className="w-9 h-9 rounded-lg bg-slate-900 border border-slate-800 text-indigo-400 flex items-center justify-center shrink-0">
-                                        <i data-lucide="link-2" className="w-4 h-4"></i>
-                                    </div>
+                                    {image ? (
+                                        <img src={image} alt="" className="w-16 h-16 rounded-lg object-cover border border-slate-800 bg-slate-900 shrink-0" />
+                                    ) : (
+                                        <div className="w-10 h-10 rounded-lg bg-slate-900 border border-slate-800 text-indigo-400 flex items-center justify-center shrink-0">
+                                            <i data-lucide={previewState?.status === 'loading' ? 'loader' : 'link-2'} className={`w-4 h-4 ${previewState?.status === 'loading' ? 'animate-spin' : ''}`}></i>
+                                        </div>
+                                    )}
                                     <div className="min-w-0 flex-1">
-                                        <p className="text-xs font-semibold text-slate-200 truncate">{meta.host}</p>
-                                        <p className="text-[11px] text-slate-500 truncate">{meta.path}</p>
+                                        <p className="text-xs font-semibold text-slate-200 truncate">{title}</p>
+                                        <p className="text-[11px] text-slate-500 truncate">{description}</p>
+                                        <p className="text-[10px] text-indigo-400/70 truncate mt-0.5">{meta.host}</p>
                                     </div>
                                     <i data-lucide="external-link" className="w-3.5 h-3.5 text-slate-600 group-hover/link:text-indigo-400 shrink-0"></i>
                                 </a>
@@ -1226,6 +1263,18 @@
                                                     <span className="hidden sm:inline">コピー</span>
                                                 </button>
                                             </div>
+                                        </div>
+
+                                        <div className="space-y-2">
+                                            <label className="text-[10px] text-slate-400 block font-semibold">OGP WORKER URL</label>
+                                            <input
+                                                type="url"
+                                                placeholder="https://your-worker.your-name.workers.dev"
+                                                value={ogpWorkerUrl}
+                                                onChange={e => setOgpWorkerUrl(e.target.value)}
+                                                className="w-full bg-slate-950 border border-slate-800 rounded px-3 py-2 text-xs text-slate-200 focus:outline-none focus:border-indigo-500 font-mono"
+                                            />
+                                            <p className="text-[10px] text-slate-500">設定するとURLカードにタイトル、説明、サムネイル画像を表示します。</p>
                                         </div>
 
                                         {accessToken && (
