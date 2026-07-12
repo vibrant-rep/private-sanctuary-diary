@@ -79,6 +79,9 @@
             const [selectedDate, setSelectedDate] = useState(new Date());
             const [currentMonth, setCurrentMonth] = useState(new Date());
             const [inputText, setInputText] = useState('');
+            const [pendingImage, setPendingImage] = useState(null);
+            const [pendingImageUrl, setPendingImageUrl] = useState(null);
+            const [isImageUploading, setIsImageUploading] = useState(false);
             const [searchQuery, setSearchQuery] = useState('');
             const [aiSearchMode, setAiSearchMode] = useState(false);
             const [previewImage, setPreviewImage] = useState(null);
@@ -129,6 +132,12 @@
                     messagesEndRef.current.scrollIntoView({ behavior: 'smooth' });
                 }
             }, [notes, selectedDate, imageBlobCache]);
+
+            useEffect(() => {
+                return () => {
+                    if (pendingImageUrl) URL.revokeObjectURL(pendingImageUrl);
+                };
+            }, [pendingImageUrl]);
 
             const showNotification = (message, type = 'success') => {
                 setNotification({ message, type });
@@ -564,13 +573,16 @@
                         return;
                     }
                     try {
+                        setIsImageUploading(true);
                         showNotification('高画質画像をドライブへ直接アップロード中...', 'info');
                         const driveFileId = await uploadImageToDrive(file);
                         newMessage.gdriveFileId = driveFileId;
-                        newMessage.content = file.name || 'アップロード画像';
+                        newMessage.content = content?.trim() || file.name || 'アップロード画像';
                     } catch (err) {
                         showNotification(`画像アップロード失敗: ${err.message}`, 'error');
                         return;
+                    } finally {
+                        setIsImageUploading(false);
                     }
                 }
 
@@ -581,6 +593,7 @@
                 };
                 setNotes(updatedNotes);
                 setInputText('');
+                clearPendingImage();
                 showNotification('メモを保存しました');
 
                 // 送信直前にバックグラウンドで最新データをもう一度引いてマージ同期（上書き防止）
@@ -589,8 +602,36 @@
                 }
             };
 
+            const prepareImageUpload = (file) => {
+                if (!file?.type?.startsWith('image/')) {
+                    showNotification('画像ファイルのみ追加できます', 'error');
+                    return;
+                }
+                if (!accessToken) {
+                    showNotification('Google Drive接続時のみ、オリジナル高画質画像を投稿できます。', 'error');
+                    return;
+                }
+
+                const previewUrl = URL.createObjectURL(file);
+                setPendingImage(file);
+                setPendingImageUrl(previewUrl);
+                showNotification('画像をプレビューに追加しました', 'info');
+            };
+
+            const clearPendingImage = () => {
+                setPendingImage(null);
+                setPendingImageUrl(null);
+                if (fileInputRef.current) fileInputRef.current.value = '';
+            };
+
             const handleSendText = (e) => {
                 if (e) e.preventDefault();
+                if (isImageUploading) return;
+                if (pendingImage) {
+                    addMessage('image', inputText || pendingImage.name || 'アップロード画像', pendingImage);
+                    return;
+                }
+                if (!inputText.trim()) return;
                 addMessage('text', inputText);
             };
 
@@ -603,7 +644,7 @@
                         e.preventDefault();
                         const file = items[i].getAsFile();
                         if (file) {
-                            addMessage('image', 'コピペした画像', file);
+                            prepareImageUpload(file);
                         }
                     }
                 }
@@ -617,7 +658,7 @@
                 if (e.dataTransfer.files && e.dataTransfer.files[0]) {
                     const file = e.dataTransfer.files[0];
                     if (file.type.startsWith('image/')) {
-                        addMessage('image', file.name, file);
+                        prepareImageUpload(file);
                     } else {
                         showNotification('画像ファイルのみドロップ可能です', 'error');
                     }
@@ -627,7 +668,7 @@
             const handleFileChange = async (e) => {
                 if (e.target.files && e.target.files[0]) {
                     const file = e.target.files[0];
-                    addMessage('image', file.name, file);
+                    prepareImageUpload(file);
                 }
             };
 
@@ -1168,6 +1209,32 @@
                                 <div className="p-3 md:p-4 border-t border-slate-800 bg-slate-900/40 shrink-0 pb-safe">
                                     <div className="max-w-3xl mx-auto">
                                         <form onSubmit={handleSendText} className="relative bg-slate-900 border border-slate-800 rounded-2xl p-1.5 focus-within:border-indigo-500">
+                                            {pendingImage && pendingImageUrl && (
+                                                <div className="m-1 mb-2 rounded-xl border border-slate-800 bg-slate-950 p-2 flex items-center gap-3">
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => setPreviewImage(pendingImageUrl)}
+                                                        className="w-16 h-16 rounded-lg overflow-hidden bg-slate-900 border border-slate-800 shrink-0"
+                                                        title="画像を拡大"
+                                                    >
+                                                        <img src={pendingImageUrl} alt="Selected upload preview" className="w-full h-full object-cover" />
+                                                    </button>
+                                                    <div className="min-w-0 flex-1">
+                                                        <p className="text-xs font-semibold text-slate-200 truncate">{pendingImage.name || 'アップロード画像'}</p>
+                                                        <p className="text-[10px] text-slate-500">{Math.max(1, Math.round(pendingImage.size / 1024))} KB</p>
+                                                        <p className="text-[10px] text-indigo-400 mt-1">{isImageUploading ? 'Google Driveへアップロード中...' : 'キャプションを書いて送信できます'}</p>
+                                                    </div>
+                                                    <button
+                                                        type="button"
+                                                        onClick={clearPendingImage}
+                                                        disabled={isImageUploading}
+                                                        className="p-1.5 text-slate-500 hover:text-red-400 hover:bg-red-950/30 rounded-lg disabled:opacity-30"
+                                                        title="画像を取り消す"
+                                                    >
+                                                        <i data-lucide="x" className="w-4 h-4"></i>
+                                                    </button>
+                                                </div>
+                                            )}
                                             <textarea
                                                 value={inputText}
                                                 onChange={(e) => setInputText(e.target.value)}
@@ -1175,11 +1242,11 @@
                                                 onKeyDown={(e) => {
                                                     if (e.key === 'Enter' && !e.shiftKey && window.innerWidth >= 768) {
                                                         e.preventDefault();
-                                                        addMessage('text', inputText);
+                                                        handleSendText(e);
                                                     }
                                                 }}
-                                                placeholder={accessToken ? "ここにメッセージを入力..." : "設定からGoogle Driveにログインすると、高画質な日記同期が利用できます。"}
-                                                disabled={!accessToken}
+                                                placeholder={pendingImage ? "画像のキャプションを入力..." : accessToken ? "ここにメッセージを入力..." : "設定からGoogle Driveにログインすると、高画質な日記同期が利用できます。"}
+                                                disabled={!accessToken || isImageUploading}
                                                 rows="2"
                                                 className="w-full bg-transparent text-[16px] md:text-sm text-slate-200 placeholder-slate-500 px-3 py-1.5 focus:outline-none resize-none disabled:opacity-50"
                                             />
@@ -1195,7 +1262,7 @@
                                                 <button
                                                     type="button"
                                                     onClick={() => fileInputRef.current?.click()}
-                                                    disabled={!accessToken}
+                                                    disabled={!accessToken || isImageUploading}
                                                     className="flex items-center gap-1 text-xs text-slate-400 hover:text-indigo-400 px-2.5 py-1.5 rounded-lg hover:bg-slate-800 disabled:opacity-30"
                                                 >
                                                     <i data-lucide="image" className="w-4 h-4"></i>
@@ -1204,13 +1271,13 @@
                                                 </button>
 
                                                 <div className="flex items-center gap-2">
-                                                    <span className="text-[10px] text-slate-500 hidden md:inline">Enterで送信</span>
+                                                    <span className="text-[10px] text-slate-500 hidden md:inline">{pendingImage ? 'Enterで画像送信' : 'Enterで送信'}</span>
                                                     <button
                                                         type="submit"
-                                                        disabled={!inputText.trim() || !accessToken}
+                                                        disabled={(!inputText.trim() && !pendingImage) || !accessToken || isImageUploading}
                                                         className="bg-indigo-600 hover:bg-indigo-700 disabled:opacity-40 text-white font-semibold p-2 rounded-xl text-xs transition-colors flex items-center justify-center"
                                                     >
-                                                        <i data-lucide="send" className="w-4 h-4"></i>
+                                                        <i data-lucide={isImageUploading ? "loader" : "send"} className={`w-4 h-4 ${isImageUploading ? 'animate-spin' : ''}`}></i>
                                                     </button>
                                                 </div>
                                             </div>
