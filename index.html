@@ -135,7 +135,11 @@
                 setTimeout(() => setNotification(null), 4000);
             };
 
-            // ID重複を排除しつつお互いの日記を自動マージするGitライクなコア関数
+            const isDeletedNote = (note) => Boolean(note?.deletedAt);
+            const getNoteVersion = (note) => Date.parse(note?.deletedAt || note?.updatedAt || note?.createdAt || note?.timestamp || '') || 0;
+            const getVisibleNotes = (dayNotes = []) => dayNotes.filter(note => !isDeletedNote(note));
+
+            // ID重複を排除し、削除情報を優先してお互いの日記を自動マージするGitライクなコア関数
             const mergeNotes = (localNotes, cloudNotes) => {
                 const merged = { ...localNotes };
                 Object.keys(cloudNotes).forEach(dateKey => {
@@ -145,7 +149,18 @@
                         // 同一日のログマージ処理（ID基準で重複を完全ガード）
                         const localMap = new Map(merged[dateKey].map(n => [n.id, n]));
                         cloudNotes[dateKey].forEach(cloudNote => {
-                            if (!localMap.has(cloudNote.id)) {
+                            const localNote = localMap.get(cloudNote.id);
+                            if (!localNote) {
+                                localMap.set(cloudNote.id, cloudNote);
+                                return;
+                            }
+
+                            if (isDeletedNote(localNote) || isDeletedNote(cloudNote)) {
+                                localMap.set(cloudNote.id, getNoteVersion(cloudNote) > getNoteVersion(localNote) ? cloudNote : localNote);
+                                return;
+                            }
+
+                            if (getNoteVersion(cloudNote) > getNoteVersion(localNote)) {
                                 localMap.set(cloudNote.id, cloudNote);
                             }
                         });
@@ -501,12 +516,15 @@
                 const dateKey = formatDateKey(selectedDate);
                 const now = new Date();
                 const timestamp = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
+                const createdAt = now.toISOString();
                 
                 const newMessage = {
                     id: `msg-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
                     type,
                     content,
-                    timestamp
+                    timestamp,
+                    createdAt,
+                    updatedAt: createdAt
                 };
 
                 if (type === 'image' && file) {
@@ -583,13 +601,13 @@
             };
 
             const handleDeleteMessage = async (dateKey, messageId, gdriveFileId) => {
-                const updatedDay = notes[dateKey].filter(msg => msg.id !== messageId);
-                const updatedNotes = { ...notes };
-                if (updatedDay.length === 0) {
-                    delete updatedNotes[dateKey];
-                } else {
-                    updatedNotes[dateKey] = updatedDay;
-                }
+                const deletedAt = new Date().toISOString();
+                const updatedDay = (notes[dateKey] || []).map(msg => 
+                    msg.id === messageId
+                        ? { ...msg, deletedAt, updatedAt: deletedAt }
+                        : msg
+                );
+                const updatedNotes = { ...notes, [dateKey]: updatedDay };
 
                 setNotes(updatedNotes);
                 showNotification('メモを削除しました', 'info');
@@ -631,7 +649,7 @@
                 const query = searchQuery.toLowerCase();
 
                 Object.keys(notes).forEach(dk => {
-                    notes[dk].forEach(msg => {
+                    getVisibleNotes(notes[dk]).forEach(msg => {
                         const matchesText = msg.content.toLowerCase().includes(query);
                         let matchesAi = false;
                         if (aiSearchMode) {
@@ -662,7 +680,7 @@
 
             const searchResults = getSearchResults();
             const dateKey = formatDateKey(selectedDate);
-            const activeDayNotes = notes[dateKey] || [];
+            const activeDayNotes = getVisibleNotes(notes[dateKey] || []);
 
             const DriveImage = ({ fileId }) => {
                 const cachedUrl = imageBlobCache[fileId];
@@ -819,7 +837,7 @@
                                 <div className="grid grid-cols-7 gap-1">
                                     {calendarDays.map((day, idx) => {
                                         const dayKey = formatDateKey(day.date);
-                                        const hasNotes = notes[dayKey] && notes[dayKey].length > 0;
+                                        const hasNotes = getVisibleNotes(notes[dayKey] || []).length > 0;
                                         const isSelected = formatDateKey(selectedDate) === dayKey;
                                         const isToday = formatDateKey(new Date()) === dayKey;
 
