@@ -213,6 +213,36 @@
                 });
             };
 
+            const backfillThumbnailForImage = async (fileId, blob) => {
+                const thumbnailDataUrl = await createImageThumbnail(blob);
+                let changed = false;
+                const updatedAt = new Date().toISOString();
+                const updatedNotes = {};
+
+                Object.keys(notes).forEach(dateKey => {
+                    updatedNotes[dateKey] = notes[dateKey].map(note => {
+                        if (note.gdriveFileId === fileId && !note.thumbnailDataUrl && !note.deletedAt) {
+                            changed = true;
+                            return {
+                                ...note,
+                                thumbnailDataUrl,
+                                updatedAt
+                            };
+                        }
+                        return note;
+                    });
+                });
+
+                if (!changed) return;
+
+                setNotes(updatedNotes);
+
+                if (accessToken && folderId) {
+                    setSyncLog('古い画像のサムネイルを生成し、同期データへ反映中...');
+                    await pullAndMergeSync(accessToken, folderId, diaryFileId, updatedNotes);
+                }
+            };
+
             // ID重複を排除し、削除情報を優先してお互いの日記を自動マージするGitライクなコア関数
             const mergeNotes = (localNotes, cloudNotes) => {
                 const merged = { ...localNotes };
@@ -532,8 +562,9 @@
                     if (!response.ok) throw new Error('画像の取得に失敗');
                     const blob = await response.blob();
                     const objectUrl = URL.createObjectURL(blob);
-                    
+                     
                     setImageBlobCache(prev => ({ ...prev, [fileId]: objectUrl }));
+                    backfillThumbnailForImage(fileId, blob).catch(err => console.error("Thumbnail backfill failed", err));
                 } catch (err) {
                     console.error("Failed to load image from Drive", err);
                 } finally {
