@@ -86,6 +86,7 @@
             const [searchQuery, setSearchQuery] = useState('');
             const [aiSearchMode, setAiSearchMode] = useState(false);
             const [previewImage, setPreviewImage] = useState(null);
+            const [isPreviewImageLoading, setIsPreviewImageLoading] = useState(false);
             const [dragActive, setDragActive] = useState(false);
             const [notification, setNotification] = useState(null);
 
@@ -117,6 +118,8 @@
             const fileInputRef = useRef(null);
             const tokenClientRef = useRef(null);
             const syncInFlightRef = useRef(false);
+            const imageLoadPromisesRef = useRef({});
+            const previewRequestIdRef = useRef(0);
 
             useEffect(() => {
                 if (window.location.origin) {
@@ -151,6 +154,12 @@
             const showNotification = (message, type = 'success') => {
                 setNotification({ message, type });
                 setTimeout(() => setNotification(null), 4000);
+            };
+
+            const closePreviewImage = () => {
+                previewRequestIdRef.current += 1;
+                setPreviewImage(null);
+                setIsPreviewImageLoading(false);
             };
 
             const isDeletedNote = (note) => Boolean(note?.deletedAt);
@@ -620,12 +629,19 @@
             };
 
             const fetchImageFromDrive = async (fileId) => {
-                if (imageBlobCache[fileId] || loadingImages[fileId] || !accessToken) return;
+                if (imageBlobCache[fileId]) return imageBlobCache[fileId];
+                if (!accessToken) throw new Error('Google Driveに接続してください');
+                if (imageLoadPromisesRef.current[fileId]) return imageLoadPromisesRef.current[fileId];
 
-                setLoadingImages(prev => ({ ...prev, [fileId]: true }));
-                try {
+                const loadPromise = (async () => {
+                    setLoadingImages(prev => ({ ...prev, [fileId]: true }));
                     const response = await fetch(`https://www.googleapis.com/drive/v3/files/${fileId}?alt=media`, {
-                        headers: { Authorization: `Bearer ${accessToken}` }
+                        headers: {
+                            Authorization: `Bearer ${accessToken}`,
+                            'Cache-Control': 'no-cache',
+                            'Pragma': 'no-cache'
+                        },
+                        cache: 'no-store'
                     });
                     if (!response.ok) throw new Error('画像の取得に失敗');
                     const blob = await response.blob();
@@ -633,9 +649,18 @@
                      
                     setImageBlobCache(prev => ({ ...prev, [fileId]: objectUrl }));
                     backfillThumbnailForImage(fileId, blob).catch(err => console.error("Thumbnail backfill failed", err));
+                    return objectUrl;
+                })();
+
+                imageLoadPromisesRef.current[fileId] = loadPromise;
+
+                try {
+                    return await loadPromise;
                 } catch (err) {
                     console.error("Failed to load image from Drive", err);
+                    throw err;
                 } finally {
+                    delete imageLoadPromisesRef.current[fileId];
                     setLoadingImages(prev => ({ ...prev, [fileId]: false }));
                 }
             };
@@ -979,16 +1004,36 @@
 
                 useEffect(() => {
                     if (!thumbnailDataUrl && !cachedUrl && accessToken) {
-                        fetchImageFromDrive(fileId);
+                        fetchImageFromDrive(fileId).catch(err => console.error("Image preload failed", err));
                     }
                 }, [fileId, accessToken, cachedUrl, thumbnailDataUrl]);
 
-                const handleOpenImage = () => {
+                const handleOpenImage = async () => {
                     if (cachedUrl) {
+                        setIsPreviewImageLoading(false);
                         setPreviewImage(cachedUrl);
-                    } else if (thumbnailDataUrl) {
-                        setPreviewImage(thumbnailDataUrl);
-                        if (fileId && accessToken) fetchImageFromDrive(fileId);
+                        return;
+                    }
+
+                    if (!fileId) return;
+
+                    const requestId = previewRequestIdRef.current + 1;
+                    previewRequestIdRef.current = requestId;
+                    setPreviewImage(null);
+                    setIsPreviewImageLoading(true);
+
+                    try {
+                        const fullSizeUrl = await fetchImageFromDrive(fileId);
+                        if (previewRequestIdRef.current !== requestId) return;
+                        setPreviewImage(fullSizeUrl);
+                    } catch (err) {
+                        if (previewRequestIdRef.current !== requestId) return;
+                        showNotification(`高解像度画像の読み込みに失敗しました: ${err.message}`, 'error');
+                        setPreviewImage(null);
+                    } finally {
+                        if (previewRequestIdRef.current === requestId) {
+                            setIsPreviewImageLoading(false);
+                        }
                     }
                 };
 
@@ -1206,19 +1251,27 @@
                             onPointerCancel={handlePointerEnd}
                             onDoubleClick={handleDoubleClick}
                         >
-                            <img
-                                src={src}
-                                alt="Expanded preview"
-                                draggable="false"
-                                className="max-w-full max-h-full rounded-xl object-contain shadow-2xl select-none"
-                                style={{
-                                    transform: `translate3d(${transform.x}px, ${transform.y}px, 0) scale(${transform.scale})`,
-                                    transition: pointersRef.current.size ? 'none' : 'transform 120ms ease-out',
-                                    transformOrigin: 'center center',
-                                    willChange: 'transform'
-                                }}
-                                onClick={(event) => event.stopPropagation()}
-                            />
+                            {src ? (
+                                <img
+                                    src={src}
+                                    alt="Expanded preview"
+                                    draggable="false"
+                                    className="max-w-full max-h-full rounded-xl object-contain shadow-2xl select-none"
+                                    style={{
+                                        transform: `translate3d(${transform.x}px, ${transform.y}px, 0) scale(${transform.scale})`,
+                                        transition: pointersRef.current.size ? 'none' : 'transform 120ms ease-out',
+                                        transformOrigin: 'center center',
+                                        willChange: 'transform'
+                                    }}
+                                    onClick={(event) => event.stopPropagation()}
+                                />
+                            ) : (
+                                <div className="flex flex-col items-center justify-center gap-3 text-slate-300">
+                                    <i data-lucide="loader" className="w-8 h-8 animate-spin text-indigo-400"></i>
+                                    <p className="text-sm font-semibold">高解像度画像を読み込み中...</p>
+                                    <p className="text-xs text-slate-500">読み込み後にピンチズームできます</p>
+                                </div>
+                            )}
                         </div>
                     </div>
                 );
@@ -1761,8 +1814,8 @@
                     </div>
 
                     {/* 拡大プレビュー */}
-                    {previewImage && (
-                        <ImagePreviewModal src={previewImage} onClose={() => setPreviewImage(null)} />
+                    {(previewImage || isPreviewImageLoading) && (
+                        <ImagePreviewModal src={previewImage} onClose={closePreviewImage} />
                     )}
 
                 </div>
