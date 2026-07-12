@@ -1,7 +1,7 @@
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Methods": "GET, OPTIONS",
-  "Access-Control-Allow-Headers": "Content-Type, Accept",
+  "Access-Control-Allow-Headers": "Content-Type, Accept, Cache-Control, Pragma",
   "Access-Control-Max-Age": "86400",
 };
 
@@ -71,7 +71,80 @@ function absoluteUrl(value, baseUrl) {
   }
 }
 
-async function handleRequest(request) {
+function getAiResponseText(result) {
+  if (!result) return "";
+  if (typeof result.output_text === "string") return result.output_text;
+  if (typeof result.response === "string") return result.response;
+  if (typeof result.text === "string") return result.text;
+  if (typeof result.result?.response === "string") return result.result.response;
+  if (typeof result.result?.text === "string") return result.result.text;
+  if (Array.isArray(result.output)) {
+    return result.output
+      .flatMap(item => item.content || [])
+      .map(content => content.text || (content.type === "output_text" ? content.text : ""))
+      .filter(Boolean)
+      .join(" ");
+  }
+  if (Array.isArray(result.choices)) {
+    return result.choices[0]?.message?.content || result.choices[0]?.text || "";
+  }
+  return "";
+}
+
+function normalizeSummary(value) {
+  return value
+    .replace(/[\r\n]+/g, " ")
+    .replace(/^["'「『\s]+|["'」』\s]+$/g, "")
+    .replace(/^AI要約[:：]\s*/i, "")
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, 70)
+    .replace(/[、,][^、,]*$/, "")
+    .trim();
+}
+
+function fallbackSummary({ title, description }) {
+  const source = description || title || "";
+  if (!source.trim()) return "";
+  return source
+    .replace(/[\r\n]+/g, " ")
+    .replace(/\s+/g, " ")
+    .split(/[。.!?]/)[0]
+    .slice(0, 55)
+    .trim();
+}
+
+async function generateSummary(env, { title, description, siteName }) {
+  const sourceText = [title, description, siteName].filter(Boolean).join("\n");
+  if (!env?.AI || !sourceText.trim()) return "";
+
+  try {
+    const result = await env.AI.run("@cf/meta/llama-3.2-3b-instruct", {
+      messages: [
+        {
+          role: "system",
+          content: "あなたはWebページの内容を日本語で短く要約する編集者です。出力は要約文だけにしてください。",
+        },
+        {
+          role: "user",
+          content: `次のWebページ情報を、日本語25文字以内の自然な1行で要約してください。説明ではなく「何のページか」だけを短く書いてください。宣伝口調、URL、サイト名だけの繰り返し、箇条書き、句点は避けてください。\n\n${sourceText}`,
+        },
+      ],
+      max_tokens: 48,
+      max_completion_tokens: 80,
+      temperature: 0.2,
+    });
+
+    const summary = normalizeSummary(getAiResponseText(result));
+    if (summary.length < 8) return fallbackSummary({ title, description });
+    return summary;
+  } catch (err) {
+    console.warn("Workers AI summary failed", err);
+    return fallbackSummary({ title, description });
+  }
+}
+
+async function handleRequest(request, env) {
   if (request.method === "OPTIONS") {
     return new Response(null, { status: 204, headers: corsHeaders });
   }
@@ -118,6 +191,7 @@ async function handleRequest(request) {
   const description = findMeta(html, ["og:description", "twitter:description", "description"]);
   const image = absoluteUrl(findMeta(html, ["og:image", "twitter:image", "twitter:image:src"]), targetUrl.href);
   const siteName = findMeta(html, ["og:site_name", "application-name"]) || targetUrl.hostname.replace(/^www\./, "");
+  const summary = await generateSummary(env, { title, description, siteName });
 
   return json({
     url: targetUrl.href,
@@ -125,9 +199,12 @@ async function handleRequest(request) {
     description,
     image,
     siteName,
+    summary,
   });
 }
 
 export default {
-  fetch: handleRequest,
+  fetch(request, env) {
+    return handleRequest(request, env);
+  },
 };
