@@ -140,6 +140,8 @@
             return `${y}-${m}-${d}`;
         };
 
+        const isTodayDate = (date) => formatDateKey(date) === formatDateKey(new Date());
+
         const getInitialData = () => {
             const today = formatDateKey(new Date());
             return {
@@ -848,6 +850,11 @@
             };
 
             const addMessage = async (type, content, file = null) => {
+                if (!isTodayDate(selectedDate)) {
+                    showNotification('投稿できるのは今日の日記だけです。過去の日記は閲覧できます。', 'error');
+                    return;
+                }
+
                 const dateKey = formatDateKey(selectedDate);
                 const now = new Date();
                 const timestamp = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
@@ -903,6 +910,11 @@
             };
 
             const prepareImageUpload = (file) => {
+                if (!isTodayDate(selectedDate)) {
+                    showNotification('画像を追加できるのは今日の日記だけです。', 'error');
+                    return;
+                }
+
                 if (!file?.type?.startsWith('image/')) {
                     showNotification('画像ファイルのみ追加できます', 'error');
                     return;
@@ -927,6 +939,10 @@
             const handleSendText = async (e) => {
                 if (e) e.preventDefault();
                 if (isImageUploading || isUrlSummarizing) return;
+                if (!isTodayDate(selectedDate)) {
+                    showNotification('投稿できるのは今日の日記だけです。', 'error');
+                    return;
+                }
 
                 setIsUrlSummarizing(true);
                 try {
@@ -1060,6 +1076,7 @@
             const searchResults = getSearchResults();
             const dateKey = formatDateKey(selectedDate);
             const activeDayNotes = getVisibleNotes(notes[dateKey] || []);
+            const canPostToSelectedDate = isTodayDate(selectedDate);
             const syncStatusMeta = {
                 synced: { label: '同期済み', className: 'bg-emerald-950 text-emerald-400 border border-emerald-800' },
                 syncing: { label: '同期中', className: 'bg-indigo-950 text-indigo-400 border border-indigo-800' },
@@ -1897,7 +1914,13 @@
 
                                 <div className="p-3 md:p-4 border-t border-slate-800 bg-slate-900/40 shrink-0 pb-safe">
                                     <div className="max-w-3xl mx-auto">
-                                        <form onSubmit={handleSendText} className="relative bg-slate-900 border border-slate-800 rounded-2xl p-1.5 focus-within:border-indigo-500">
+                                        {!canPostToSelectedDate && (
+                                            <div className="mb-2 rounded-xl border border-slate-800 bg-slate-950 px-3 py-2 text-[11px] text-slate-400 flex items-center gap-2">
+                                                <i data-lucide="lock" className="w-3.5 h-3.5 text-slate-500 shrink-0"></i>
+                                                <span>今日以外の日記には新規投稿できません。内容の確認と削除はできます。</span>
+                                            </div>
+                                        )}
+                                        <form onSubmit={handleSendText} className={`relative bg-slate-900 border border-slate-800 rounded-2xl p-1.5 focus-within:border-indigo-500 ${!canPostToSelectedDate ? 'opacity-70' : ''}`}>
                                             {pendingImage && pendingImageUrl && (
                                                 <div className="m-1 mb-2 rounded-xl border border-slate-800 bg-slate-950 p-2 flex items-center gap-3">
                                                     <button
@@ -1944,8 +1967,8 @@
                                                         handleSendText(e);
                                                     }
                                                 }}
-                                                placeholder={pendingImage ? "画像のキャプションを入力..." : accessToken ? "ここにメッセージを入力..." : "設定からGoogle Driveにログインすると、高画質な日記同期が利用できます。"}
-                                                disabled={!accessToken || isImageUploading || isUrlSummarizing}
+                                                placeholder={!canPostToSelectedDate ? "今日以外の日記には新規投稿できません。" : pendingImage ? "画像のキャプションを入力..." : accessToken ? "ここにメッセージを入力..." : "設定からGoogle Driveにログインすると、高画質な日記同期が利用できます。"}
+                                                disabled={!accessToken || !canPostToSelectedDate || isImageUploading || isUrlSummarizing}
                                                 rows="2"
                                                 className="w-full bg-transparent text-[16px] md:text-sm text-slate-200 placeholder-slate-500 px-3 py-1.5 focus:outline-none resize-none disabled:opacity-50"
                                             />
@@ -1961,7 +1984,7 @@
                                                 <button
                                                     type="button"
                                                     onClick={() => fileInputRef.current?.click()}
-                                                    disabled={!accessToken || isImageUploading || isUrlSummarizing}
+                                                    disabled={!accessToken || !canPostToSelectedDate || isImageUploading || isUrlSummarizing}
                                                     className="flex items-center gap-1 text-xs text-slate-400 hover:text-indigo-400 px-2.5 py-1.5 rounded-lg hover:bg-slate-800 disabled:opacity-30"
                                                 >
                                                     <i data-lucide="image" className="w-4 h-4"></i>
@@ -1973,7 +1996,7 @@
                                                     <span className="text-[10px] text-slate-500 hidden md:inline">{pendingImage ? 'Enterで画像送信' : 'Enterで送信'}</span>
                                                     <button
                                                         type="submit"
-                                                        disabled={(!inputText.trim() && !pendingImage) || !accessToken || isImageUploading || isUrlSummarizing}
+                                                        disabled={(!inputText.trim() && !pendingImage) || !accessToken || !canPostToSelectedDate || isImageUploading || isUrlSummarizing}
                                                         className="bg-indigo-600 hover:bg-indigo-700 disabled:opacity-40 text-white font-semibold p-2 rounded-xl text-xs transition-colors flex items-center justify-center"
                                                     >
                                                         <i data-lucide={(isImageUploading || isUrlSummarizing) ? "loader" : "send"} className={`w-4 h-4 ${(isImageUploading || isUrlSummarizing) ? 'animate-spin' : ''}`}></i>
