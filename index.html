@@ -276,6 +276,7 @@
             const getNoteVersion = (note) => Date.parse(note?.deletedAt || note?.updatedAt || note?.createdAt || note?.timestamp || '') || 0;
             const getVisibleNotes = (dayNotes = []) => dayNotes.filter(note => !isDeletedNote(note));
             const URL_PATTERN = /https?:\/\/[^\s<>"']+/gi;
+            const DIRECT_VIDEO_EXTENSIONS = new Set(['mp4', 'webm', 'ogg', 'ogv', 'mov', 'm4v']);
 
             const cleanUrl = (url) => url.replace(/[),.、。]+$/g, '');
             const extractUrls = (text = '') => {
@@ -304,6 +305,38 @@
                     };
                 } catch {
                     return { href: url, host: url, path: '' };
+                }
+            };
+
+            const getYouTubeVideoId = (url) => {
+                try {
+                    const parsed = new URL(url);
+                    const host = parsed.hostname.replace(/^www\./, '').toLowerCase();
+                    if (host === 'youtu.be') {
+                        return parsed.pathname.split('/').filter(Boolean)[0] || '';
+                    }
+                    if (host === 'youtube.com' || host === 'm.youtube.com' || host === 'music.youtube.com') {
+                        if (parsed.searchParams.get('v')) return parsed.searchParams.get('v');
+                        const parts = parsed.pathname.split('/').filter(Boolean);
+                        if (['embed', 'shorts', 'live'].includes(parts[0])) return parts[1] || '';
+                    }
+                } catch {
+                    return '';
+                }
+                return '';
+            };
+
+            const getDirectVideoInfo = (url) => {
+                try {
+                    const parsed = new URL(url);
+                    const extension = parsed.pathname.split('.').pop()?.toLowerCase() || '';
+                    if (!DIRECT_VIDEO_EXTENSIONS.has(extension)) return null;
+                    return {
+                        src: parsed.href,
+                        type: extension === 'ogv' ? 'video/ogg' : extension === 'm4v' ? 'video/mp4' : `video/${extension}`
+                    };
+                } catch {
+                    return null;
                 }
             };
 
@@ -1142,7 +1175,10 @@
             const UrlCards = ({ content }) => {
                 const urls = extractUrls(content);
                 useEffect(() => {
-                    urls.forEach(url => fetchUrlPreview(url));
+                    urls.forEach(url => {
+                        if (getYouTubeVideoId(url) || getDirectVideoInfo(url)) return;
+                        fetchUrlPreview(url);
+                    });
                 }, [content, ogpWorkerUrl]);
 
                 if (urls.length === 0) return null;
@@ -1151,6 +1187,57 @@
                     <div className="space-y-2 pt-1">
                         {urls.map(url => {
                             const meta = getUrlMeta(url);
+                            const youtubeVideoId = getYouTubeVideoId(url);
+                            if (youtubeVideoId) {
+                                return (
+                                    <div key={meta.href} className="overflow-hidden rounded-xl border border-slate-800 bg-slate-950">
+                                        <div className="aspect-video bg-black">
+                                            <iframe
+                                                src={`https://www.youtube.com/embed/${youtubeVideoId}`}
+                                                title="YouTube video player"
+                                                className="h-full w-full"
+                                                allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+                                                allowFullScreen
+                                                loading="lazy"
+                                            />
+                                        </div>
+                                        <a
+                                            href={meta.href}
+                                            target="_blank"
+                                            rel="noopener noreferrer"
+                                            className="flex items-center justify-between gap-2 px-3 py-2 text-[11px] text-slate-400 hover:text-indigo-300 transition-colors"
+                                        >
+                                            <span className="truncate">{meta.host}</span>
+                                            <i data-lucide="external-link" className="w-3.5 h-3.5 shrink-0"></i>
+                                        </a>
+                                    </div>
+                                );
+                            }
+
+                            const directVideo = getDirectVideoInfo(url);
+                            if (directVideo) {
+                                return (
+                                    <div key={meta.href} className="overflow-hidden rounded-xl border border-slate-800 bg-slate-950">
+                                        <video
+                                            src={directVideo.src}
+                                            controls
+                                            playsInline
+                                            preload="metadata"
+                                            className="max-h-[420px] w-full bg-black"
+                                        />
+                                        <a
+                                            href={meta.href}
+                                            target="_blank"
+                                            rel="noopener noreferrer"
+                                            className="flex items-center justify-between gap-2 px-3 py-2 text-[11px] text-slate-400 hover:text-indigo-300 transition-colors"
+                                        >
+                                            <span className="truncate">{meta.host}{meta.path}</span>
+                                            <i data-lucide="external-link" className="w-3.5 h-3.5 shrink-0"></i>
+                                        </a>
+                                    </div>
+                                );
+                            }
+
                             const previewState = urlPreviewCache[url];
                             const preview = previewState?.data;
                             const title = preview?.title || meta.host;
