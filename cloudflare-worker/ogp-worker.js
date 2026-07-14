@@ -205,14 +205,14 @@ function buildSummaryPrompt({ title, description, siteName, articleText }) {
 
   return {
     sourceText,
-    instruction: `以下の記事を日本語90〜130字で自然に要約してください。タイトルの言い換えではなく、本文から分かる内容を1段落だけで書いてください。前置きや箇条書きは禁止です。\n\n${sourceText}`,
+    instruction: `以下の記事本文を、内容が分かるように日本語で2行程度に要約してください。ハッシュタグやキーワード列挙は使わず、普通の文章の要約だけを出力してください。\n\n${sourceText}`,
   };
 }
 
 async function generateGeminiSummary(env, summaryInput) {
   if (!env?.GEMINI_API_KEY) return "";
 
-  const model = env.GEMINI_MODEL || "gemini-3.5-flash";
+  const model = env.GEMINI_MODEL || "gemini-3.1-flash-lite";
   const { instruction } = buildSummaryPrompt(summaryInput);
   const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${env.GEMINI_API_KEY}`, {
     method: "POST",
@@ -233,7 +233,7 @@ async function generateGeminiSummary(env, summaryInput) {
         maxOutputTokens: 180,
       },
     }),
-    signal: AbortSignal.timeout(7000),
+    signal: AbortSignal.timeout(25000),
   });
 
   const data = await response.json();
