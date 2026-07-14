@@ -118,6 +118,54 @@ function absoluteUrl(value, baseUrl) {
   }
 }
 
+function getExtension(url = "") {
+  try {
+    return new URL(url).pathname.split(".").pop()?.toLowerCase() || "";
+  } catch {
+    return "";
+  }
+}
+
+function inferVideoType(url = "", declaredType = "") {
+  const type = declaredType.trim().toLowerCase();
+  if (type.startsWith("video/") || type.includes("mpegurl")) return type;
+
+  const extension = getExtension(url);
+  if (extension === "mp4" || extension === "m4v") return "video/mp4";
+  if (extension === "webm") return "video/webm";
+  if (extension === "ogg" || extension === "ogv") return "video/ogg";
+  if (extension === "mov") return "video/quicktime";
+  if (extension === "m3u8") return "application/vnd.apple.mpegurl";
+  return "";
+}
+
+function findVideoMeta(html, baseUrl) {
+  const videoUrl = absoluteUrl(
+    findMeta(html, [
+      "og:video:secure_url",
+      "og:video:url",
+      "og:video",
+      "twitter:player:stream",
+    ]),
+    baseUrl
+  );
+  const videoType = inferVideoType(
+    videoUrl,
+    findMeta(html, ["og:video:type", "twitter:player:stream:content_type"])
+  );
+  const playerUrl = absoluteUrl(findMeta(html, ["twitter:player"]), baseUrl);
+  const playerWidth = findMeta(html, ["twitter:player:width"]);
+  const playerHeight = findMeta(html, ["twitter:player:height"]);
+
+  return {
+    video: videoUrl,
+    videoType,
+    player: playerUrl && playerUrl !== videoUrl ? playerUrl : "",
+    playerWidth,
+    playerHeight,
+  };
+}
+
 function getAiResponseText(result) {
   if (!result) return "";
   const readContent = content => {
@@ -329,6 +377,7 @@ async function handleRequest(request, env) {
   const description = findMeta(html, ["og:description", "twitter:description", "description"]);
   const image = absoluteUrl(findMeta(html, ["og:image", "twitter:image", "twitter:image:src"]), targetUrl.href);
   const siteName = findMeta(html, ["og:site_name", "application-name"]) || targetUrl.hostname.replace(/^www\./, "");
+  const videoMeta = findVideoMeta(html, targetUrl.href);
   const articleText = findArticleText(html);
   const summary = await generateSummary(env, { title, description, siteName, articleText });
 
@@ -339,6 +388,7 @@ async function handleRequest(request, env) {
     image,
     siteName,
     summary,
+    ...videoMeta,
   });
 }
 

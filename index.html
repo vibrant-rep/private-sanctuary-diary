@@ -340,6 +340,19 @@
                 }
             };
 
+            const getPreviewVideoInfo = (preview) => {
+                if (!preview?.video) return null;
+                const direct = getDirectVideoInfo(preview.video);
+                if (direct) return direct;
+
+                const type = (preview.videoType || '').toLowerCase();
+                if (!type.startsWith('video/')) return null;
+                return {
+                    src: preview.video,
+                    type
+                };
+            };
+
             const requestUrlPreview = async (url) => {
                 const endpoint = ogpWorkerUrl.trim().replace(/\/$/, '');
                 if (!endpoint) throw new Error('OGP Worker URLが未設定です');
@@ -1244,6 +1257,57 @@
                             const description = preview?.description || meta.path;
                             const image = preview?.image;
                             const summary = preview?.summary;
+                            const previewVideo = getPreviewVideoInfo(preview);
+                            if (previewVideo) {
+                                return (
+                                    <div key={meta.href} className="overflow-hidden rounded-xl border border-slate-800 bg-slate-950">
+                                        <video
+                                            src={previewVideo.src}
+                                            controls
+                                            playsInline
+                                            preload="metadata"
+                                            poster={image || undefined}
+                                            className="max-h-[420px] w-full bg-black"
+                                        />
+                                        <a
+                                            href={meta.href}
+                                            target="_blank"
+                                            rel="noopener noreferrer"
+                                            className="flex items-center justify-between gap-2 px-3 py-2 text-[11px] text-slate-400 hover:text-indigo-300 transition-colors"
+                                        >
+                                            <span className="truncate">{title}</span>
+                                            <i data-lucide="external-link" className="w-3.5 h-3.5 shrink-0"></i>
+                                        </a>
+                                    </div>
+                                );
+                            }
+
+                            if (preview?.player) {
+                                return (
+                                    <div key={meta.href} className="overflow-hidden rounded-xl border border-slate-800 bg-slate-950">
+                                        <div className="aspect-video bg-black">
+                                            <iframe
+                                                src={preview.player}
+                                                title={title || 'Video player'}
+                                                className="h-full w-full"
+                                                allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+                                                allowFullScreen
+                                                loading="lazy"
+                                            />
+                                        </div>
+                                        <a
+                                            href={meta.href}
+                                            target="_blank"
+                                            rel="noopener noreferrer"
+                                            className="flex items-center justify-between gap-2 px-3 py-2 text-[11px] text-slate-400 hover:text-indigo-300 transition-colors"
+                                        >
+                                            <span className="truncate">{title}</span>
+                                            <i data-lucide="external-link" className="w-3.5 h-3.5 shrink-0"></i>
+                                        </a>
+                                    </div>
+                                );
+                            }
+
                             return (
                                 <a
                                     key={meta.href}
