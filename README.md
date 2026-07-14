@@ -32,3 +32,12 @@
 | ローカルファイル | `file://` で開いた状態ではGoogleログインできません。 |
 | 同期方式 | 完全なプッシュ同期ではなく、保存時、画面復帰時、45秒ごとの軽い同期を使います。 |
 | データ保存先 | 投稿データはGitHub Pagesではなく、Google Drive内の `diary_data.json` に保存されます。 |
+
+## URL要約
+
+| 項目 | 内容 |
+|---|---|
+| OGP取得 | Cloudflare Worker がURL先のHTMLを取得し、タイトル、説明、画像、本文抜粋を返します。 |
+| AI要約 | Worker のシークレットに `GEMINI_API_KEY` がある場合は Gemini 3.5 Flash を優先して要約します。 |
+| 代替処理 | Gemini APIが使えない場合は Workers AI、最後に本文抜粋ベースの要約へフォールバックします。 |
+| キャッシュ | 要約結果が古く残らないよう、WorkerのJSONレスポンスは `Cache-Control: no-store` にしています。 |

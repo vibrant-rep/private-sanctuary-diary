@@ -13,7 +13,7 @@ function json(data, status = 200) {
     headers: {
       ...corsHeaders,
       "Content-Type": "application/json; charset=utf-8",
-      "Cache-Control": status === 200 ? "public, max-age=3600" : "no-store",
+      "Cache-Control": "no-store",
     },
   });
 }
@@ -120,11 +120,21 @@ function absoluteUrl(value, baseUrl) {
 
 function getAiResponseText(result) {
   if (!result) return "";
+  const readContent = content => {
+    if (typeof content === "string") return content;
+    if (Array.isArray(content)) {
+      return content.map(part => part.text || part.content || "").filter(Boolean).join(" ");
+    }
+    return "";
+  };
+
   if (typeof result.output_text === "string") return result.output_text;
   if (typeof result.response === "string") return result.response;
   if (typeof result.text === "string") return result.text;
   if (typeof result.result?.response === "string") return result.result.response;
   if (typeof result.result?.text === "string") return result.result.text;
+  if (result.message?.content) return readContent(result.message.content);
+  if (result.result?.message?.content) return readContent(result.result.message.content);
   if (Array.isArray(result.output)) {
     return result.output
       .flatMap(item => item.content || [])
@@ -133,7 +143,10 @@ function getAiResponseText(result) {
       .join(" ");
   }
   if (Array.isArray(result.choices)) {
-    return result.choices[0]?.message?.content || result.choices[0]?.text || "";
+    const messageContent = result.choices[0]?.message?.content;
+    const text = readContent(messageContent);
+    if (text) return text;
+    return result.choices[0]?.text || "";
   }
   return "";
 }
@@ -187,19 +200,19 @@ function buildSummaryPrompt({ title, description, siteName, articleText }) {
     `タイトル: ${title}`,
     `概要: ${description}`,
     `サイト: ${siteName}`,
-    `本文抜粋: ${articleText}`,
+    `本文抜粋: ${articleText.slice(0, 700)}`,
   ].filter(line => line.replace(/^[^:]+:\s*/, "").trim()).join("\n");
 
   return {
     sourceText,
-    instruction: `次のWeb記事を、日本語70〜110字程度の自然な文章で要約してください。タイトルの言い換えではなく、本文から「主張」「具体例」「読者に役立つ点」を拾ってください。硬い直訳調、同じ語尾の連続、「〜する際に」の多用、URL、サイト名、箇条書き、前置き、宣伝口調は避けてください。\n\n${sourceText}`,
+    instruction: `以下の記事を日本語90〜130字で自然に要約してください。タイトルの言い換えではなく、本文から分かる内容を1段落だけで書いてください。前置きや箇条書きは禁止です。\n\n${sourceText}`,
   };
 }
 
 async function generateGeminiSummary(env, summaryInput) {
   if (!env?.GEMINI_API_KEY) return "";
 
-  const model = env.GEMINI_MODEL || "gemini-2.5-flash-lite";
+  const model = env.GEMINI_MODEL || "gemini-3.5-flash";
   const { instruction } = buildSummaryPrompt(summaryInput);
   const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${env.GEMINI_API_KEY}`, {
     method: "POST",
@@ -233,10 +246,24 @@ async function generateGeminiSummary(env, summaryInput) {
   );
 }
 
+async function generateWorkersAiSummary(env, summaryInput) {
+  if (!env?.AI) return "";
+  const { instruction } = buildSummaryPrompt(summaryInput);
+  const result = await env.AI.run("@cf/google/gemma-4-26b-a4b-it", {
+    prompt: instruction,
+    max_completion_tokens: 2200,
+    reasoning_effort: "none",
+    temperature: 0.25,
+    top_p: 0.9,
+  });
+
+  return normalizeSummary(getAiResponseText(result));
+}
+
 async function generateSummary(env, { title, description, siteName, articleText }) {
   const summaryInput = { title, description, siteName, articleText };
-  const { sourceText, instruction } = buildSummaryPrompt(summaryInput);
-  if (!env?.AI || !sourceText.trim()) return "";
+  const { sourceText } = buildSummaryPrompt(summaryInput);
+  if (!sourceText.trim()) return "";
 
   try {
     const geminiSummary = await generateGeminiSummary(env, summaryInput);
@@ -245,34 +272,14 @@ async function generateSummary(env, { title, description, siteName, articleText 
     console.warn("Gemini summary failed", err);
   }
 
-  if (env?.ENABLE_WORKERS_AI_SUMMARY !== "true") {
-    return fallbackSummary({ title, description, articleText });
-  }
-
   try {
-    const result = await env.AI.run("@cf/meta/llama-3.2-3b-instruct", {
-      messages: [
-        {
-          role: "system",
-          content: "あなたは日本語ネイティブの編集者です。Web記事の内容を、自然で読みやすい読書メモとして要約します。出力は要約文だけにしてください。",
-        },
-        {
-          role: "user",
-          content: instruction,
-        },
-      ],
-      max_tokens: 160,
-      max_completion_tokens: 200,
-      temperature: 0.35,
-    });
-
-    const summary = normalizeSummary(getAiResponseText(result));
-    if (summary.length < 24 || summary === title) return fallbackSummary({ title, description, articleText });
-    return summary;
+    const workersAiSummary = await generateWorkersAiSummary(env, summaryInput);
+    if (workersAiSummary.length >= 24 && workersAiSummary !== title) return workersAiSummary;
   } catch (err) {
     console.warn("Workers AI summary failed", err);
-    return fallbackSummary({ title, description, articleText });
   }
+
+  return fallbackSummary({ title, description, articleText });
 }
 
 async function handleRequest(request, env) {
