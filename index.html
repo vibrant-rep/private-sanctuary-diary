@@ -277,6 +277,10 @@
             const getVisibleNotes = (dayNotes = []) => dayNotes.filter(note => !isDeletedNote(note));
             const URL_PATTERN = /https?:\/\/[^\s<>"']+/gi;
             const DIRECT_VIDEO_EXTENSIONS = new Set(['mp4', 'webm', 'ogg', 'ogv', 'mov', 'm4v']);
+            const isImageFile = (file) => Boolean(file?.type?.startsWith('image/'));
+            const isVideoFile = (file) => Boolean(file?.type?.startsWith('video/'));
+            const isMediaFile = (file) => isImageFile(file) || isVideoFile(file);
+            const isMediaMessage = (type) => type === 'image' || type === 'video';
 
             const cleanUrl = (url) => url.replace(/[),.、。]+$/g, '');
             const extractUrls = (text = '') => {
@@ -809,12 +813,14 @@
                         },
                         cache: 'no-store'
                     });
-                    if (!response.ok) throw new Error('画像の取得に失敗');
+                    if (!response.ok) throw new Error('ファイルの取得に失敗');
                     const blob = await response.blob();
                     const objectUrl = URL.createObjectURL(blob);
                      
                     setImageBlobCache(prev => ({ ...prev, [fileId]: objectUrl }));
-                    backfillThumbnailForImage(fileId, blob).catch(err => console.error("Thumbnail backfill failed", err));
+                    if (blob.type.startsWith('image/')) {
+                        backfillThumbnailForImage(fileId, blob).catch(err => console.error("Thumbnail backfill failed", err));
+                    }
                     return objectUrl;
                 })();
 
@@ -831,15 +837,15 @@
                 }
             };
 
-            const uploadImageToDrive = async (file) => {
+            const uploadMediaToDrive = async (file) => {
                 if (!accessToken || !folderId) {
                     throw new Error('Google Driveが接続されていないため、クラウド保存できません。');
                 }
 
-                setSyncLog(`高画質画像「${file.name}」をドライブへ直接アップロード中...`);
+                setSyncLog(`ファイル「${file.name}」をドライブへ直接アップロード中...`);
 
                 const metadata = {
-                    name: `diary_img_${Date.now()}_${file.name}`,
+                    name: `diary_media_${Date.now()}_${file.name}`,
                     parents: [folderId],
                     mimeType: file.type
                 };
@@ -876,24 +882,24 @@
                                 setImageUploadProgress(100);
                                 resolve(parsed);
                             } else {
-                                reject(new Error(parsed.error?.message || '画像保存APIでアップロードに失敗しました'));
+                                reject(new Error(parsed.error?.message || 'ファイル保存APIでアップロードに失敗しました'));
                             }
                         } catch (err) {
                             reject(err);
                         }
                     };
 
-                    xhr.onerror = () => reject(new Error('画像アップロード中に通信エラーが発生しました'));
-                    xhr.onabort = () => reject(new Error('画像アップロードが中断されました'));
+                    xhr.onerror = () => reject(new Error('ファイルアップロード中に通信エラーが発生しました'));
+                    xhr.onabort = () => reject(new Error('ファイルアップロードが中断されました'));
                     xhr.send(bodyBlob);
                 });
                  
-                if (!result.id) throw new Error('画像保存APIでファイルIDが返されませんでした');
+                if (!result.id) throw new Error('ファイル保存APIでファイルIDが返されませんでした');
                 
                 const localUrl = URL.createObjectURL(file);
                 setImageBlobCache(prev => ({ ...prev, [result.id]: localUrl }));
 
-                setSyncLog('画像のアップロード成功！');
+                setSyncLog('ファイルのアップロード成功！');
                 return result.id;
             };
 
@@ -917,23 +923,27 @@
                     updatedAt: createdAt
                 };
 
-                if (type === 'image' && file) {
+                if (isMediaMessage(type) && file) {
                     if (!accessToken) {
-                        showNotification('Google Drive接続時のみ、オリジナル高画質画像を投稿できます。', 'error');
+                        showNotification('Google Drive接続時のみ、画像・動画ファイルを投稿できます。', 'error');
                         return;
                     }
                     try {
                         setIsImageUploading(true);
                         setImageUploadProgress(0);
-                        showNotification('表示用サムネイルを生成中...', 'info');
-                        const thumbnailDataUrl = await createImageThumbnail(file);
-                        newMessage.thumbnailDataUrl = thumbnailDataUrl;
-                        showNotification('高画質画像をドライブへ直接アップロード中...', 'info');
-                        const driveFileId = await uploadImageToDrive(file);
+                        newMessage.mediaType = file.type || (type === 'video' ? 'video/*' : 'image/*');
+                        newMessage.fileName = file.name || '';
+                        if (type === 'image') {
+                            showNotification('表示用サムネイルを生成中...', 'info');
+                            const thumbnailDataUrl = await createImageThumbnail(file);
+                            newMessage.thumbnailDataUrl = thumbnailDataUrl;
+                        }
+                        showNotification(`${type === 'video' ? '動画' : '画像'}ファイルをドライブへ直接アップロード中...`, 'info');
+                        const driveFileId = await uploadMediaToDrive(file);
                         newMessage.gdriveFileId = driveFileId;
-                        newMessage.content = content?.trim() || file.name || 'アップロード画像';
+                        newMessage.content = content?.trim() || file.name || (type === 'video' ? 'アップロード動画' : 'アップロード画像');
                     } catch (err) {
-                        showNotification(`画像アップロード失敗: ${err.message}`, 'error');
+                        showNotification(`ファイルアップロード失敗: ${err.message}`, 'error');
                         return;
                     } finally {
                         setIsImageUploading(false);
@@ -959,23 +969,23 @@
 
             const prepareImageUpload = (file) => {
                 if (!isTodayDate(selectedDate)) {
-                    showNotification('画像を追加できるのは今日の日記だけです。', 'error');
+                    showNotification('画像・動画を追加できるのは今日の日記だけです。', 'error');
                     return;
                 }
 
-                if (!file?.type?.startsWith('image/')) {
-                    showNotification('画像ファイルのみ追加できます', 'error');
+                if (!isMediaFile(file)) {
+                    showNotification('画像または動画ファイルのみ追加できます', 'error');
                     return;
                 }
                 if (!accessToken) {
-                    showNotification('Google Drive接続時のみ、オリジナル高画質画像を投稿できます。', 'error');
+                    showNotification('Google Drive接続時のみ、画像・動画ファイルを投稿できます。', 'error');
                     return;
                 }
 
                 const previewUrl = URL.createObjectURL(file);
                 setPendingImage(file);
                 setPendingImageUrl(previewUrl);
-                showNotification('画像をプレビューに追加しました', 'info');
+                showNotification(`${isVideoFile(file) ? '動画' : '画像'}をプレビューに追加しました`, 'info');
             };
 
             const clearPendingImage = () => {
@@ -996,7 +1006,8 @@
                 try {
                     const content = await appendUrlSummaries(inputText);
                     if (pendingImage) {
-                        await addMessage('image', content || pendingImage.name || 'アップロード画像', pendingImage);
+                        const type = isVideoFile(pendingImage) ? 'video' : 'image';
+                        await addMessage(type, content || pendingImage.name || (type === 'video' ? 'アップロード動画' : 'アップロード画像'), pendingImage);
                         return;
                     }
                     if (!content.trim()) return;
@@ -1011,7 +1022,7 @@
                 if (!items) return;
 
                 for (let i = 0; i < items.length; i++) {
-                    if (items[i].type.indexOf('image') !== -1) {
+                    if (items[i].type.indexOf('image') !== -1 || items[i].type.indexOf('video') !== -1) {
                         e.preventDefault();
                         const file = items[i].getAsFile();
                         if (file) {
@@ -1028,10 +1039,10 @@
 
                 if (e.dataTransfer.files && e.dataTransfer.files[0]) {
                     const file = e.dataTransfer.files[0];
-                    if (file.type.startsWith('image/')) {
+                    if (isMediaFile(file)) {
                         prepareImageUpload(file);
                     } else {
-                        showNotification('画像ファイルのみドロップ可能です', 'error');
+                        showNotification('画像または動画ファイルのみドロップ可能です', 'error');
                     }
                 }
             };
@@ -1086,7 +1097,7 @@
                 if (!editingMessage) return;
 
                 const draft = editingText.trim();
-                if (!draft && editingMessage.type !== 'image') {
+                if (!draft && !isMediaMessage(editingMessage.type)) {
                     showNotification('本文が空のテキスト投稿は保存できません。', 'error');
                     return;
                 }
@@ -1098,7 +1109,7 @@
                     changed = true;
                     return {
                         ...msg,
-                        content: draft || msg.content || 'アップロード画像',
+                        content: draft || msg.content || (msg.type === 'video' ? 'アップロード動画' : 'アップロード画像'),
                         updatedAt
                     };
                 });
@@ -1435,6 +1446,38 @@
                     <div className="w-full max-w-xs h-40 bg-slate-900 border border-slate-800 rounded-xl flex flex-col items-center justify-center text-xs text-slate-500 animate-pulse gap-2 p-4">
                         <i data-lucide="loader" className="w-5 h-5 animate-spin text-indigo-500"></i>
                         <span className="text-center">Google Driveからオリジナル高画質画像を読込中...</span>
+                    </div>
+                );
+            };
+
+            const DriveVideo = ({ fileId }) => {
+                const cachedUrl = imageBlobCache[fileId];
+                const isLoading = loadingImages[fileId];
+
+                useEffect(() => {
+                    if (!cachedUrl && accessToken) {
+                        fetchImageFromDrive(fileId).catch(err => console.error("Video preload failed", err));
+                    }
+                }, [fileId, accessToken, cachedUrl]);
+
+                if (cachedUrl) {
+                    return (
+                        <div className="overflow-hidden rounded-xl border border-slate-800 bg-black max-w-full">
+                            <video
+                                src={cachedUrl}
+                                controls
+                                playsInline
+                                preload="metadata"
+                                className="max-h-[420px] w-full bg-black"
+                            />
+                        </div>
+                    );
+                }
+
+                return (
+                    <div className="w-full max-w-xl h-48 bg-slate-900 border border-slate-800 rounded-xl flex flex-col items-center justify-center text-xs text-slate-500 animate-pulse gap-2 p-4">
+                        <i data-lucide={isLoading ? 'loader' : 'video'} className={`w-5 h-5 text-indigo-500 ${isLoading ? 'animate-spin' : ''}`}></i>
+                        <span className="text-center">Google Driveから動画を読込中...</span>
                     </div>
                 );
             };
@@ -1820,7 +1863,7 @@
                                         <h2 className="text-lg md:text-xl font-bold mt-1.5 mb-1 flex items-center gap-2">
                                             <i data-lucide="key-round" className="text-indigo-400"></i> Google Driveに接続
                                         </h2>
-                                        <p className="text-xs text-slate-400">日記データと画像を自分のGoogle Driveへ保存します。</p>
+                                        <p className="text-xs text-slate-400">日記データと画像・動画を自分のGoogle Driveへ保存します。</p>
                                     </div>
                                     <button 
                                         onClick={() => setIsSidebarOpen(true)}
@@ -1838,7 +1881,7 @@
                                         <div className="min-w-0">
                                             <h3 className="text-base font-bold text-slate-100">{accessToken ? 'Google Drive同期が有効です' : 'Googleアカウントでログイン'}</h3>
                                             <p className="text-xs text-slate-400 leading-relaxed mt-1">
-                                                {accessToken ? 'この端末の投稿はGoogle Drive内の同期ファイルへ保存され、他の端末とマージされます。' : 'ログインすると、テキスト、URLカード、画像サムネイル、オリジナル画像保存が使えるようになります。'}
+                                                {accessToken ? 'この端末の投稿はGoogle Drive内の同期ファイルへ保存され、他の端末とマージされます。' : 'ログインすると、テキスト、URLカード、画像サムネイル、画像・動画保存が使えるようになります。'}
                                             </p>
                                         </div>
                                     </div>
@@ -1850,7 +1893,7 @@
                                         </div>
                                         <div className="bg-slate-950 border border-slate-800 rounded-lg p-3">
                                             <i data-lucide="image" className="w-4 h-4 mx-auto text-indigo-400 mb-1"></i>
-                                            <p className="text-[10px] text-slate-400">画像保存</p>
+                                            <p className="text-[10px] text-slate-400">メディア保存</p>
                                         </div>
                                         <div className="bg-slate-950 border border-slate-800 rounded-lg p-3">
                                             <i data-lucide="refresh-cw" className="w-4 h-4 mx-auto text-indigo-400 mb-1"></i>
@@ -2050,8 +2093,8 @@
                                 >
                                     {dragActive && (
                                         <div className="absolute inset-0 bg-indigo-600/10 border-4 border-dashed border-indigo-500 m-4 rounded-2xl z-20 flex flex-col items-center justify-center backdrop-blur-sm pointer-events-none">
-                                            <p className="font-bold text-indigo-400">ここに高画質画像をドロップして追加</p>
-                                            <p className="text-xs text-indigo-400/70">オリジナル品質のままGoogle Driveへ直接アップロードされます</p>
+                                            <p className="font-bold text-indigo-400">ここに画像・動画をドロップして追加</p>
+                                            <p className="text-xs text-indigo-400/70">ファイルをGoogle Driveへ直接アップロードします</p>
                                         </div>
                                     )}
 
@@ -2063,7 +2106,7 @@
                                             <div className="space-y-1">
                                                 <p className="font-semibold text-slate-300">本日の日記はまだありません</p>
                                                 <p className="text-xs text-slate-500 leading-relaxed">
-                                                    下の入力欄にメッセージを入力するか、画像をコピペ（Ctrl+V）して、日常を記録しましょう。スマホからは「画像を追加」ボタンも便利です。
+                                                    下の入力欄にメッセージを入力するか、画像をコピペ（Ctrl+V）して、日常を記録しましょう。スマホからは「ファイル追加」ボタンも便利です。
                                                 </p>
                                             </div>
                                         </div>
@@ -2076,6 +2119,10 @@
                                                             <div className="w-8 h-8 md:w-9 md:h-9 rounded-xl bg-violet-950/50 border border-violet-800 text-violet-400 flex items-center justify-center">
                                                                 <i data-lucide="image" className="w-4 h-4"></i>
                                                             </div>
+                                                        ) : msg.type === 'video' ? (
+                                                            <div className="w-8 h-8 md:w-9 md:h-9 rounded-xl bg-cyan-950/50 border border-cyan-800 text-cyan-300 flex items-center justify-center">
+                                                                <i data-lucide="video" className="w-4 h-4"></i>
+                                                            </div>
                                                         ) : (
                                                             <div className="w-8 h-8 md:w-9 md:h-9 rounded-xl bg-indigo-950/50 border border-indigo-800 text-indigo-400 flex items-center justify-center">
                                                                 <i data-lucide="calendar-days" className="w-4 h-4"></i>
@@ -2086,7 +2133,7 @@
                                                     <div className="flex-1 space-y-1 overflow-hidden">
                                                         <div className="flex items-center justify-between">
                                                             <span className="text-[9px] md:text-[10px] font-bold tracking-wider text-slate-500">
-                                                                {msg.type === 'image' ? 'IMAGE LOG' : 'TEXT LOG'}
+                                                                {msg.type === 'image' ? 'IMAGE LOG' : msg.type === 'video' ? 'VIDEO LOG' : 'TEXT LOG'}
                                                             </span>
                                                             <span className="text-[9px] md:text-[10px] text-slate-600">{msg.timestamp}</span>
                                                         </div>
@@ -2097,6 +2144,12 @@
                                                             </div>
                                                         )}
 
+                                                        {msg.type === 'video' && msg.gdriveFileId && (
+                                                            <div className="my-1.5">
+                                                                <DriveVideo fileId={msg.gdriveFileId} />
+                                                            </div>
+                                                        )}
+
                                                         {editingMessage?.id === msg.id && editingMessage?.dateKey === dateKey ? (
                                                             <div className="space-y-2">
                                                                 <textarea
@@ -2104,7 +2157,7 @@
                                                                     onChange={(e) => setEditingText(e.target.value)}
                                                                     rows="4"
                                                                     className="w-full rounded-xl border border-indigo-900/70 bg-slate-950 px-3 py-2 text-[16px] md:text-sm text-slate-200 placeholder-slate-500 focus:outline-none focus:border-indigo-500 resize-y"
-                                                                    placeholder={msg.type === 'image' ? '画像キャプションを入力...' : '本文を入力...'}
+                                                                    placeholder={isMediaMessage(msg.type) ? `${msg.type === 'video' ? '動画' : '画像'}キャプションを入力...` : '本文を入力...'}
                                                                 />
                                                                 <div className="flex items-center justify-end gap-2">
                                                                     <button
@@ -2167,16 +2220,22 @@
                                         <form onSubmit={handleSendText} className={`relative bg-slate-900 border border-slate-800 rounded-2xl p-1.5 focus-within:border-indigo-500 ${!canPostToSelectedDate ? 'opacity-70' : ''}`}>
                                             {pendingImage && pendingImageUrl && (
                                                 <div className="m-1 mb-2 rounded-xl border border-slate-800 bg-slate-950 p-2 flex items-center gap-3">
-                                                    <button
-                                                        type="button"
-                                                        onClick={() => setPreviewImage(pendingImageUrl)}
-                                                        className="w-16 h-16 rounded-lg overflow-hidden bg-slate-900 border border-slate-800 shrink-0"
-                                                        title="画像を拡大"
-                                                    >
-                                                        <img src={pendingImageUrl} alt="Selected upload preview" className="w-full h-full object-cover" />
-                                                    </button>
+                                                    {isVideoFile(pendingImage) ? (
+                                                        <div className="w-20 h-16 rounded-lg overflow-hidden bg-black border border-slate-800 shrink-0">
+                                                            <video src={pendingImageUrl} muted playsInline preload="metadata" className="w-full h-full object-cover" />
+                                                        </div>
+                                                    ) : (
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => setPreviewImage(pendingImageUrl)}
+                                                            className="w-16 h-16 rounded-lg overflow-hidden bg-slate-900 border border-slate-800 shrink-0"
+                                                            title="画像を拡大"
+                                                        >
+                                                            <img src={pendingImageUrl} alt="Selected upload preview" className="w-full h-full object-cover" />
+                                                        </button>
+                                                    )}
                                                     <div className="min-w-0 flex-1">
-                                                        <p className="text-xs font-semibold text-slate-200 truncate">{pendingImage.name || 'アップロード画像'}</p>
+                                                        <p className="text-xs font-semibold text-slate-200 truncate">{pendingImage.name || (isVideoFile(pendingImage) ? 'アップロード動画' : 'アップロード画像')}</p>
                                                         <p className="text-[10px] text-slate-500">{Math.max(1, Math.round(pendingImage.size / 1024))} KB</p>
                                                         <p className="text-[10px] text-indigo-400 mt-1">
                                                             {isImageUploading ? `Google Driveへアップロード中... ${imageUploadProgress}%` : isUrlSummarizing ? 'URLのAI要約を生成中...' : 'キャプションを書いて送信できます'}
@@ -2195,7 +2254,7 @@
                                                         onClick={clearPendingImage}
                                                         disabled={isImageUploading}
                                                         className="p-1.5 text-slate-500 hover:text-red-400 hover:bg-red-950/30 rounded-lg disabled:opacity-30"
-                                                        title="画像を取り消す"
+                                                        title="ファイルを取り消す"
                                                     >
                                                         <i data-lucide="x" className="w-4 h-4"></i>
                                                     </button>
@@ -2211,7 +2270,7 @@
                                                         handleSendText(e);
                                                     }
                                                 }}
-                                                placeholder={!canPostToSelectedDate ? "今日以外の日記には新規投稿できません。" : pendingImage ? "画像のキャプションを入力..." : accessToken ? "ここにメッセージを入力..." : "設定からGoogle Driveにログインすると、高画質な日記同期が利用できます。"}
+                                                placeholder={!canPostToSelectedDate ? "今日以外の日記には新規投稿できません。" : pendingImage ? `${isVideoFile(pendingImage) ? '動画' : '画像'}のキャプションを入力...` : accessToken ? "ここにメッセージを入力..." : "設定からGoogle Driveにログインすると、高画質な日記同期が利用できます。"}
                                                 disabled={!accessToken || !canPostToSelectedDate || isImageUploading || isUrlSummarizing}
                                                 rows="2"
                                                 className="w-full bg-transparent text-[16px] md:text-sm text-slate-200 placeholder-slate-500 px-3 py-1.5 focus:outline-none resize-none disabled:opacity-50"
@@ -2222,7 +2281,7 @@
                                                     type="file" 
                                                     ref={fileInputRef}
                                                     onChange={handleFileChange}
-                                                    accept="image/*"
+                                                    accept="image/*,video/*"
                                                     className="hidden"
                                                 />
                                                 <button
@@ -2231,13 +2290,13 @@
                                                     disabled={!accessToken || !canPostToSelectedDate || isImageUploading || isUrlSummarizing}
                                                     className="flex items-center gap-1 text-xs text-slate-400 hover:text-indigo-400 px-2.5 py-1.5 rounded-lg hover:bg-slate-800 disabled:opacity-30"
                                                 >
-                                                    <i data-lucide="image" className="w-4 h-4"></i>
-                                                    <span className="hidden sm:inline">高画質画像を追加</span>
-                                                    <span className="sm:hidden">画像追加</span>
+                                                    <i data-lucide="paperclip" className="w-4 h-4"></i>
+                                                    <span className="hidden sm:inline">画像・動画を追加</span>
+                                                    <span className="sm:hidden">ファイル追加</span>
                                                 </button>
 
                                                 <div className="flex items-center gap-2">
-                                                    <span className="text-[10px] text-slate-500 hidden md:inline">{pendingImage ? 'Enterで画像送信' : 'Enterで送信'}</span>
+                                                    <span className="text-[10px] text-slate-500 hidden md:inline">{pendingImage ? 'Enterでファイル送信' : 'Enterで送信'}</span>
                                                     <button
                                                         type="submit"
                                                         disabled={(!inputText.trim() && !pendingImage) || !accessToken || !canPostToSelectedDate || isImageUploading || isUrlSummarizing}
