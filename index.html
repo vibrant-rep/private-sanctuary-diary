@@ -207,6 +207,8 @@
             const [ogpWorkerUrl, setOgpWorkerUrl] = useState(() => localStorage.getItem('ogp_worker_url') || DEFAULT_OGP_WORKER_URL);
             const [urlPreviewCache, setUrlPreviewCache] = useState({});
             const [isUrlSummarizing, setIsUrlSummarizing] = useState(false);
+            const [editingMessage, setEditingMessage] = useState(null);
+            const [editingText, setEditingText] = useState('');
 
             const [currentOrigin, setCurrentOrigin] = useState('');
 
@@ -996,6 +998,11 @@
             };
 
             const handleDeleteMessage = async (dateKey, messageId, gdriveFileId) => {
+                if (editingMessage?.id === messageId) {
+                    setEditingMessage(null);
+                    setEditingText('');
+                }
+
                 const deletedAt = new Date().toISOString();
                 const updatedDay = (notes[dateKey] || []).map(msg => 
                     msg.id === messageId
@@ -1013,6 +1020,52 @@
                         headers: { Authorization: `Bearer ${accessToken}` }
                     }).catch(err => console.error("Cloud file delete failed", err));
                 }
+
+                if (accessToken && folderId) {
+                    await pullAndMergeSync(accessToken, folderId, diaryFileId, updatedNotes);
+                }
+            };
+
+            const startEditingMessage = (dateKey, message) => {
+                setEditingMessage({ dateKey, id: message.id, type: message.type });
+                setEditingText(message.content || '');
+            };
+
+            const cancelEditingMessage = () => {
+                setEditingMessage(null);
+                setEditingText('');
+            };
+
+            const saveEditedMessage = async () => {
+                if (!editingMessage) return;
+
+                const draft = editingText.trim();
+                if (!draft && editingMessage.type !== 'image') {
+                    showNotification('本文が空のテキスト投稿は保存できません。', 'error');
+                    return;
+                }
+
+                const updatedAt = new Date().toISOString();
+                let changed = false;
+                const updatedDay = (notes[editingMessage.dateKey] || []).map(msg => {
+                    if (msg.id !== editingMessage.id || msg.deletedAt) return msg;
+                    changed = true;
+                    return {
+                        ...msg,
+                        content: draft || msg.content || 'アップロード画像',
+                        updatedAt
+                    };
+                });
+
+                if (!changed) {
+                    cancelEditingMessage();
+                    return;
+                }
+
+                const updatedNotes = { ...notes, [editingMessage.dateKey]: updatedDay };
+                setNotes(updatedNotes);
+                cancelEditingMessage();
+                showNotification('投稿を更新しました', 'info');
 
                 if (accessToken && folderId) {
                     await pullAndMergeSync(accessToken, folderId, diaryFileId, updatedNotes);
@@ -1893,18 +1946,58 @@
                                                             </div>
                                                         )}
 
-                                                        <MarkdownContent content={msg.content} />
-
-                                                        <UrlCards content={msg.content} />
+                                                        {editingMessage?.id === msg.id && editingMessage?.dateKey === dateKey ? (
+                                                            <div className="space-y-2">
+                                                                <textarea
+                                                                    value={editingText}
+                                                                    onChange={(e) => setEditingText(e.target.value)}
+                                                                    rows="4"
+                                                                    className="w-full rounded-xl border border-indigo-900/70 bg-slate-950 px-3 py-2 text-[16px] md:text-sm text-slate-200 placeholder-slate-500 focus:outline-none focus:border-indigo-500 resize-y"
+                                                                    placeholder={msg.type === 'image' ? '画像キャプションを入力...' : '本文を入力...'}
+                                                                />
+                                                                <div className="flex items-center justify-end gap-2">
+                                                                    <button
+                                                                        type="button"
+                                                                        onClick={cancelEditingMessage}
+                                                                        className="px-3 py-1.5 rounded-lg border border-slate-800 text-xs text-slate-400 hover:bg-slate-800 hover:text-white transition-colors"
+                                                                    >
+                                                                        キャンセル
+                                                                    </button>
+                                                                    <button
+                                                                        type="button"
+                                                                        onClick={saveEditedMessage}
+                                                                        className="px-3 py-1.5 rounded-lg bg-indigo-600 text-xs font-semibold text-white hover:bg-indigo-700 transition-colors"
+                                                                    >
+                                                                        保存
+                                                                    </button>
+                                                                </div>
+                                                            </div>
+                                                        ) : (
+                                                            <>
+                                                                <MarkdownContent content={msg.content} />
+                                                                <UrlCards content={msg.content} />
+                                                            </>
+                                                        )}
                                                     </div>
 
-                                                    <button 
-                                                        onClick={() => handleDeleteMessage(dateKey, msg.id, msg.gdriveFileId)}
-                                                        className="opacity-100 md:opacity-0 group-hover:opacity-100 p-1.5 text-slate-600 hover:text-red-400 hover:bg-red-950/30 rounded-lg transition-all self-center md:self-start"
-                                                        title="削除"
-                                                    >
-                                                        <i data-lucide="trash-2" className="w-3.5 h-3.5"></i>
-                                                    </button>
+                                                    <div className="opacity-100 md:opacity-0 group-hover:opacity-100 flex flex-col gap-1 transition-all self-center md:self-start">
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => startEditingMessage(dateKey, msg)}
+                                                            className="p-1.5 text-slate-600 hover:text-indigo-400 hover:bg-indigo-950/30 rounded-lg transition-all"
+                                                            title="編集"
+                                                        >
+                                                            <i data-lucide="pencil" className="w-3.5 h-3.5"></i>
+                                                        </button>
+                                                        <button 
+                                                            type="button"
+                                                            onClick={() => handleDeleteMessage(dateKey, msg.id, msg.gdriveFileId)}
+                                                            className="p-1.5 text-slate-600 hover:text-red-400 hover:bg-red-950/30 rounded-lg transition-all"
+                                                            title="削除"
+                                                        >
+                                                            <i data-lucide="trash-2" className="w-3.5 h-3.5"></i>
+                                                        </button>
+                                                    </div>
                                                 </div>
                                             ))}
                                             <div ref={messagesEndRef} />
