@@ -13,6 +13,9 @@
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
     <!-- Lucide Icons (CDN) -->
     <script src="https://unpkg.com/lucide@latest"></script>
+    <!-- Markdown renderer & sanitizer -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/marked/16.3.0/lib/marked.umd.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/dompurify/3.2.6/purify.min.js"></script>
     
     <!-- Google Identity Services (OAuth2) -->
     <script src="https://accounts.google.com/gsi/client" async defer></script>
@@ -30,6 +33,96 @@
         }
         ::-webkit-scrollbar-thumb:hover {
             background: #475569;
+        }
+        .markdown-body h1,
+        .markdown-body h2,
+        .markdown-body h3 {
+            color: #e2e8f0;
+            font-weight: 700;
+            line-height: 1.35;
+            margin: 0.65rem 0 0.35rem;
+        }
+        .markdown-body h1 {
+            font-size: 1.125rem;
+        }
+        .markdown-body h2 {
+            font-size: 1rem;
+        }
+        .markdown-body h3 {
+            font-size: 0.9375rem;
+        }
+        .markdown-body p {
+            margin: 0.35rem 0;
+        }
+        .markdown-body ul,
+        .markdown-body ol {
+            margin: 0.45rem 0 0.45rem 1.25rem;
+            padding: 0;
+        }
+        .markdown-body ul {
+            list-style: disc;
+        }
+        .markdown-body ol {
+            list-style: decimal;
+        }
+        .markdown-body li {
+            margin: 0.15rem 0;
+        }
+        .markdown-body blockquote {
+            border-left: 3px solid #6366f1;
+            color: #cbd5e1;
+            margin: 0.55rem 0;
+            padding-left: 0.75rem;
+        }
+        .markdown-body code {
+            background: #020617;
+            border: 1px solid #1e293b;
+            border-radius: 0.375rem;
+            color: #c4b5fd;
+            font-size: 0.85em;
+            padding: 0.1rem 0.28rem;
+        }
+        .markdown-body pre {
+            background: #020617;
+            border: 1px solid #1e293b;
+            border-radius: 0.75rem;
+            margin: 0.65rem 0;
+            overflow-x: auto;
+            padding: 0.75rem;
+        }
+        .markdown-body pre code {
+            background: transparent;
+            border: 0;
+            color: #dbeafe;
+            padding: 0;
+        }
+        .markdown-body a {
+            color: #818cf8;
+            text-decoration: underline;
+            text-underline-offset: 2px;
+            word-break: break-all;
+        }
+        .markdown-body hr {
+            border: 0;
+            border-top: 1px solid #1e293b;
+            margin: 0.85rem 0;
+        }
+        .markdown-body table {
+            border-collapse: collapse;
+            display: block;
+            margin: 0.65rem 0;
+            overflow-x: auto;
+            width: 100%;
+        }
+        .markdown-body th,
+        .markdown-body td {
+            border: 1px solid #1e293b;
+            padding: 0.35rem 0.5rem;
+        }
+        .markdown-body th {
+            background: #0f172a;
+            color: #e2e8f0;
+            font-weight: 700;
         }
     </style>
 </head>
@@ -1022,6 +1115,45 @@
                 );
             };
 
+            const MarkdownContent = ({ content }) => {
+                const html = React.useMemo(() => {
+                    const source = content || '';
+                    if (!window.marked || !window.DOMPurify) {
+                        return null;
+                    }
+
+                    const rawHtml = window.marked.parse(source, {
+                        gfm: true,
+                        breaks: true,
+                    });
+
+                    return window.DOMPurify.sanitize(rawHtml, {
+                        ALLOWED_TAGS: [
+                            'a', 'blockquote', 'br', 'code', 'del', 'em', 'h1', 'h2', 'h3',
+                            'hr', 'li', 'ol', 'p', 'pre', 'strong', 'table', 'tbody', 'td',
+                            'th', 'thead', 'tr', 'ul'
+                        ],
+                        ALLOWED_ATTR: ['href', 'title'],
+                        ALLOW_DATA_ATTR: false,
+                    });
+                }, [content]);
+
+                if (!html) {
+                    return (
+                        <p className="text-sm text-slate-200 leading-relaxed whitespace-pre-wrap break-words">
+                            {content}
+                        </p>
+                    );
+                }
+
+                return (
+                    <div
+                        className="markdown-body text-sm text-slate-200 leading-relaxed break-words"
+                        dangerouslySetInnerHTML={{ __html: html }}
+                    />
+                );
+            };
+
             const DriveImage = ({ fileId, thumbnailDataUrl }) => {
                 const cachedUrl = imageBlobCache[fileId];
 
@@ -1744,9 +1876,7 @@
                                                             </div>
                                                         )}
 
-                                                        <p className="text-sm text-slate-200 leading-relaxed whitespace-pre-wrap break-words">
-                                                            {msg.content}
-                                                        </p>
+                                                        <MarkdownContent content={msg.content} />
 
                                                         <UrlCards content={msg.content} />
                                                     </div>
