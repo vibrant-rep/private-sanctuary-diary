@@ -180,6 +180,7 @@
             const [imageUploadProgress, setImageUploadProgress] = useState(0);
             const [searchQuery, setSearchQuery] = useState('');
             const [aiSearchMode, setAiSearchMode] = useState(false);
+            const [contentFilter, setContentFilter] = useState('all');
             const [previewImage, setPreviewImage] = useState(null);
             const [isPreviewImageLoading, setIsPreviewImageLoading] = useState(false);
             const [dragActive, setDragActive] = useState(false);
@@ -334,6 +335,24 @@
                     return null;
                 }
             };
+
+            const isVideoLinkUrl = (url) => {
+                try {
+                    const host = new URL(url).hostname.replace(/^www\./, '').toLowerCase();
+                    return host === 'youtu.be' || host.endsWith('youtube.com') || isTikTokUrl(url) || Boolean(getDirectVideoInfo(url));
+                } catch {
+                    return false;
+                }
+            };
+
+            const messageHasArticleLink = (message) => extractUrls(message?.content || '').some(url => !isVideoLinkUrl(url));
+            const matchesContentFilter = (message, filter = contentFilter) => {
+                if (filter === 'image') return message.type === 'image';
+                if (filter === 'video') return message.type === 'video';
+                if (filter === 'article') return messageHasArticleLink(message);
+                return true;
+            };
+            const getFilteredNotes = (dayNotes = [], filter = contentFilter) => getVisibleNotes(dayNotes).filter(note => matchesContentFilter(note, filter));
 
             const getPreviewVideoInfo = (preview) => {
                 if (!preview?.video) return null;
@@ -1145,6 +1164,14 @@
             };
 
             const calendarDays = getDaysInMonth(currentMonth);
+            const countNotesByFilter = (filter) => Object.values(notes).reduce((total, dayNotes) => total + getFilteredNotes(dayNotes, filter).length, 0);
+            const contentFilterOptions = [
+                { id: 'all', label: 'すべて', icon: 'list-filter', count: countNotesByFilter('all') },
+                { id: 'image', label: '画像', icon: 'image', count: countNotesByFilter('image') },
+                { id: 'video', label: '動画', icon: 'video', count: countNotesByFilter('video') },
+                { id: 'article', label: '記事リンク', icon: 'newspaper', count: countNotesByFilter('article') },
+            ];
+            const activeContentFilterMeta = contentFilterOptions.find(option => option.id === contentFilter) || contentFilterOptions[0];
 
             const getSearchResults = () => {
                 if (!searchQuery.trim()) return [];
@@ -1152,7 +1179,7 @@
                 const query = searchQuery.toLowerCase();
 
                 Object.keys(notes).forEach(dk => {
-                    getVisibleNotes(notes[dk]).forEach(msg => {
+                    getFilteredNotes(notes[dk]).forEach(msg => {
                         const matchesText = msg.content.toLowerCase().includes(query);
                         let matchesAi = false;
                         if (aiSearchMode) {
@@ -1183,7 +1210,7 @@
 
             const searchResults = getSearchResults();
             const dateKey = formatDateKey(selectedDate);
-            const activeDayNotes = getVisibleNotes(notes[dateKey] || []);
+            const activeDayNotes = getFilteredNotes(notes[dateKey] || []);
             const canPostToSelectedDate = isTodayDate(selectedDate);
             const syncStatusMeta = {
                 synced: { label: '同期済み', className: 'bg-emerald-950 text-emerald-400 border border-emerald-800' },
@@ -1675,12 +1702,46 @@
                                     </label>
                                 </div>
                             )}
+                            <div className="space-y-2 pt-1">
+                                <div className="flex items-center justify-between">
+                                    <span className="text-[10px] font-semibold text-slate-500">絞り込み</span>
+                                    {contentFilter !== 'all' && (
+                                        <button
+                                            type="button"
+                                            onClick={() => setContentFilter('all')}
+                                            className="text-[10px] text-indigo-400 hover:text-indigo-300"
+                                        >
+                                            解除
+                                        </button>
+                                    )}
+                                </div>
+                                <div className="grid grid-cols-2 gap-1.5">
+                                    {contentFilterOptions.map(option => (
+                                        <button
+                                            key={option.id}
+                                            type="button"
+                                            onClick={() => setContentFilter(option.id)}
+                                            className={`min-h-9 rounded-lg border px-2 py-1.5 text-left transition-colors flex items-center gap-2 ${
+                                                contentFilter === option.id
+                                                    ? 'border-indigo-500 bg-indigo-950/60 text-indigo-200'
+                                                    : 'border-slate-800 bg-slate-950 text-slate-400 hover:border-slate-700 hover:bg-slate-800'
+                                            }`}
+                                        >
+                                            <i data-lucide={option.icon} className="w-3.5 h-3.5 shrink-0"></i>
+                                            <span className="min-w-0 flex-1 truncate text-[11px] font-semibold">{option.label}</span>
+                                            <span className="text-[10px] text-slate-500">{option.count}</span>
+                                        </button>
+                                    ))}
+                                </div>
+                            </div>
                         </div>
 
                         {/* カレンダー / 検索結果 */}
                         {searchQuery ? (
                             <div className="flex-1 overflow-y-auto p-2 space-y-1">
-                                <p className="text-xs text-slate-400 p-2 font-semibold">検索結果: {searchResults.length} 件</p>
+                                <p className="text-xs text-slate-400 p-2 font-semibold">
+                                    検索結果: {searchResults.length} 件{contentFilter !== 'all' ? `（${activeContentFilterMeta.label}）` : ''}
+                                </p>
                                 {searchResults.map(({ dateKey: resDateKey, message, isAiMatched }) => (
                                     <button
                                         key={message.id}
@@ -1719,7 +1780,7 @@
                                 <div className="grid grid-cols-7 gap-1">
                                     {calendarDays.map((day, idx) => {
                                         const dayKey = formatDateKey(day.date);
-                                        const hasNotes = getVisibleNotes(notes[dayKey] || []).length > 0;
+                                        const hasNotes = getFilteredNotes(notes[dayKey] || []).length > 0;
                                         const isSelected = formatDateKey(selectedDate) === dayKey;
                                         const isToday = formatDateKey(new Date()) === dayKey;
 
@@ -2000,9 +2061,13 @@
                                                 <i data-lucide="calendar" className="w-8 h-8"></i>
                                             </div>
                                             <div className="space-y-1">
-                                                <p className="font-semibold text-slate-300">本日の日記はまだありません</p>
+                                                <p className="font-semibold text-slate-300">
+                                                    {contentFilter === 'all' ? '本日の日記はまだありません' : `${activeContentFilterMeta.label}の投稿はありません`}
+                                                </p>
                                                 <p className="text-xs text-slate-500 leading-relaxed">
-                                                    下の入力欄にメッセージを入力するか、画像をコピペ（Ctrl+V）して、日常を記録しましょう。スマホからは「ファイル追加」ボタンも便利です。
+                                                    {contentFilter === 'all'
+                                                        ? '下の入力欄にメッセージを入力するか、画像をコピペ（Ctrl+V）して、日常を記録しましょう。スマホからは「ファイル追加」ボタンも便利です。'
+                                                        : '左の絞り込みを解除すると、他の投稿も表示されます。'}
                                                 </p>
                                             </div>
                                         </div>
