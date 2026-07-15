@@ -181,6 +181,7 @@
             const [searchQuery, setSearchQuery] = useState('');
             const [aiSearchMode, setAiSearchMode] = useState(false);
             const [contentFilter, setContentFilter] = useState('all');
+            const [selectedSearchMessageId, setSelectedSearchMessageId] = useState(null);
             const [previewImage, setPreviewImage] = useState(null);
             const [isPreviewImageLoading, setIsPreviewImageLoading] = useState(false);
             const [dragActive, setDragActive] = useState(false);
@@ -214,6 +215,7 @@
             const [currentOrigin, setCurrentOrigin] = useState('');
 
             const messagesEndRef = useRef(null);
+            const messageRefs = useRef({});
             const fileInputRef = useRef(null);
             const tokenClientRef = useRef(null);
             const syncInFlightRef = useRef(false);
@@ -251,10 +253,20 @@
             });
 
             useEffect(() => {
+                if (selectedSearchMessageId) return;
                 if (messagesEndRef.current) {
                     messagesEndRef.current.scrollIntoView({ behavior: 'smooth' });
                 }
             }, [notes, selectedDate, imageBlobCache]);
+
+            useEffect(() => {
+                if (!selectedSearchMessageId) return;
+                const target = messageRefs.current[selectedSearchMessageId];
+                if (!target) return;
+                target.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                const timer = setTimeout(() => setSelectedSearchMessageId(null), 2200);
+                return () => clearTimeout(timer);
+            }, [selectedSearchMessageId, selectedDate, notes, contentFilter]);
 
             useEffect(() => {
                 return () => {
@@ -284,6 +296,8 @@
             const isMediaMessage = (type) => type === 'image' || type === 'video';
 
             const cleanUrl = (url) => url.replace(/[),.、。]+$/g, '');
+            const escapeRegExp = (value = '') => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+            const getActiveSearchTerm = () => searchQuery.trim();
             const extractUrls = (text = '') => {
                 const seen = new Set();
                 return (text.match(URL_PATTERN) || [])
@@ -1293,10 +1307,42 @@
                     });
                 }, [content]);
 
+                const highlightedHtml = React.useMemo(() => {
+                    const term = getActiveSearchTerm();
+                    if (!html || !term) return html;
+
+                    const container = document.createElement('div');
+                    container.innerHTML = html;
+                    const pattern = new RegExp(`(${escapeRegExp(term)})`, 'gi');
+                    const walker = document.createTreeWalker(container, NodeFilter.SHOW_TEXT);
+                    const textNodes = [];
+                    while (walker.nextNode()) textNodes.push(walker.currentNode);
+
+                    textNodes.forEach(node => {
+                        if (!pattern.test(node.nodeValue)) return;
+                        pattern.lastIndex = 0;
+                        const fragment = document.createDocumentFragment();
+                        node.nodeValue.split(pattern).forEach(part => {
+                            if (!part) return;
+                            if (part.toLowerCase() === term.toLowerCase()) {
+                                const mark = document.createElement('mark');
+                                mark.className = 'rounded bg-amber-400/25 px-0.5 text-amber-100';
+                                mark.textContent = part;
+                                fragment.appendChild(mark);
+                            } else {
+                                fragment.appendChild(document.createTextNode(part));
+                            }
+                        });
+                        node.parentNode.replaceChild(fragment, node);
+                    });
+
+                    return container.innerHTML;
+                }, [html, searchQuery]);
+
                 if (!html) {
                     return (
                         <p className="text-sm text-slate-200 leading-relaxed whitespace-pre-wrap break-words">
-                            {content}
+                            <HighlightedText text={content} />
                         </p>
                     );
                 }
@@ -1304,8 +1350,28 @@
                 return (
                     <div
                         className="markdown-body text-sm text-slate-200 leading-relaxed break-words"
-                        dangerouslySetInnerHTML={{ __html: html }}
+                        dangerouslySetInnerHTML={{ __html: highlightedHtml }}
                     />
+                );
+            };
+
+            const HighlightedText = ({ text, className = '' }) => {
+                const term = getActiveSearchTerm();
+                const source = text || '';
+                if (!term) return <span className={className}>{source}</span>;
+
+                const pattern = new RegExp(`(${escapeRegExp(term)})`, 'gi');
+                const parts = source.split(pattern);
+                return (
+                    <span className={className}>
+                        {parts.map((part, index) => (
+                            part.toLowerCase() === term.toLowerCase() ? (
+                                <mark key={index} className="rounded bg-amber-400/25 px-0.5 text-amber-100">{part}</mark>
+                            ) : (
+                                <React.Fragment key={index}>{part}</React.Fragment>
+                            )
+                        ))}
+                    </span>
                 );
             };
 
@@ -1686,7 +1752,7 @@
                                     className="w-full bg-slate-950 text-slate-200 text-[16px] md:text-sm pl-9 pr-8 py-2 rounded-lg border border-slate-800 focus:outline-none focus:border-indigo-500"
                                 />
                                 {searchQuery && (
-                                    <button onClick={() => setSearchQuery('')} className="absolute right-2.5 top-2.5 text-slate-500">
+                                    <button onClick={() => { setSearchQuery(''); setSelectedSearchMessageId(null); }} className="absolute right-2.5 top-2.5 text-slate-500">
                                         <i data-lucide="x" className="w-4 h-4"></i>
                                     </button>
                                 )}
@@ -1748,7 +1814,8 @@
                                         onClick={() => {
                                             const [y, m, d] = resDateKey.split('-').map(Number);
                                             selectDiaryDate(new Date(y, m - 1, d));
-                                            setSearchQuery('');
+                                            setSelectedSearchMessageId(message.id);
+                                            setActiveTab('timeline');
                                             setIsSidebarOpen(false);
                                         }}
                                         className="w-full text-left p-2.5 hover:bg-slate-800 rounded-lg flex flex-col gap-1 border border-transparent"
@@ -1757,7 +1824,15 @@
                                             <span className="font-semibold bg-slate-950 px-1.5 py-0.5 rounded text-indigo-400">{resDateKey}</span>
                                             <span>{message.timestamp}</span>
                                         </div>
-                                        <p className="text-xs text-slate-200 line-clamp-2">{message.content}</p>
+                                        <p className="text-xs text-slate-200 line-clamp-2">
+                                            <HighlightedText text={message.content} />
+                                        </p>
+                                        {isAiMatched && (
+                                            <span className="text-[10px] text-indigo-300 flex items-center gap-1">
+                                                <i data-lucide="sparkles" className="w-3 h-3"></i>
+                                                AI検索一致
+                                            </span>
+                                        )}
                                     </button>
                                 ))}
                             </div>
@@ -2074,7 +2149,21 @@
                                     ) : (
                                         <div className="space-y-4 md:space-y-6 max-w-3xl mx-auto">
                                             {activeDayNotes.map((msg) => (
-                                                <div key={msg.id} className="group flex gap-3 md:gap-4 items-start hover:bg-slate-900/30 p-2 rounded-xl border border-transparent hover:border-slate-900/80 transition-all">
+                                                <div
+                                                    key={msg.id}
+                                                    ref={node => {
+                                                        if (node) {
+                                                            messageRefs.current[msg.id] = node;
+                                                        } else {
+                                                            delete messageRefs.current[msg.id];
+                                                        }
+                                                    }}
+                                                    className={`group flex gap-3 md:gap-4 items-start p-2 rounded-xl border transition-all scroll-mt-24 ${
+                                                        selectedSearchMessageId === msg.id
+                                                            ? 'bg-amber-950/20 border-amber-500/50 shadow-[0_0_0_1px_rgba(245,158,11,0.12)]'
+                                                            : 'border-transparent hover:bg-slate-900/30 hover:border-slate-900/80'
+                                                    }`}
+                                                >
                                                     <div className="shrink-0 mt-0.5">
                                                         {msg.type === 'image' ? (
                                                             <div className="w-8 h-8 md:w-9 md:h-9 rounded-xl bg-violet-950/50 border border-violet-800 text-violet-400 flex items-center justify-center">
