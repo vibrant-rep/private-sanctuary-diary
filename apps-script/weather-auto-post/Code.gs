@@ -172,19 +172,19 @@ function buildOutfitAdvice_(summary) {
 
   let base;
   if (feel < 5) {
-    base = 'ダウンジャケット＋厚手インナー';
+    base = '🧥 ダウンジャケット＋厚手インナー';
   } else if (feel < 13) {
-    base = 'ダウンまたは厚手ジャケット';
+    base = '🧥 ダウンまたは厚手ジャケット';
   } else if (feel < 21) {
-    base = 'ジャケット＋Tシャツ';
+    base = '🧥 ジャケット＋Tシャツ';
   } else if (feel < 28) {
-    base = tempMin < 21 ? 'Tシャツ＋薄手の羽織り' : 'Tシャツ中心';
+    base = tempMin < 21 ? '👕 Tシャツ＋薄手の羽織り' : '👕 Tシャツ中心';
   } else {
-    base = 'Tシャツのみ';
+    base = '👕 Tシャツのみ';
   }
 
   const notes = [];
-  if (muggy) notes.push('蒸し暑いので通気性重視');
+  if (muggy) notes.push('通気性重視');
   if (veryHot) notes.push('水分補給と日差し対策を優先');
   if (windyCold) notes.push('風を通しにくい上着が安心');
   if (rainLikely) notes.push('傘と濡れてもよい靴');
@@ -205,21 +205,21 @@ function buildDayAdvice_(periods) {
 
   const notes = [];
   if (allDayHot) {
-    notes.push('体感は一日を通して高めなので、基本はTシャツのみでよさそうです');
+    notes.push('🥵 体感は一日を通して高めなので、基本はTシャツのみでよさそうです');
   }
   if (veryHot) {
-    notes.push('昼は体感温度がかなり高く、羽織りよりも水分補給・日差し対策・通気性を優先したい日です');
+    notes.push('💧 昼は体感温度がかなり高く、羽織りよりも水分補給・日差し対策・通気性を優先したい日です');
   }
   if (!allDayHot && isFiniteNumber_(minFeel) && isFiniteNumber_(maxFeel) && maxFeel - minFeel >= 8) {
-    notes.push('朝晩と昼の体感差が大きいので、脱ぎ着しやすい服装がよさそうです');
+    notes.push('🧥 朝晩と昼の体感差が大きいので、脱ぎ着しやすい服装がよさそうです');
   }
   if (isFiniteNumber_(maxRain) && maxRain >= 50) {
-    notes.push('雨具を持って出るのが安心です');
+    notes.push('☔ 雨具を持って出るのが安心です');
   }
   if (!allDayHot && isFiniteNumber_(maxWind) && maxWind >= 8) {
-    notes.push('風が強めなので、軽すぎる羽織りより風を通しにくいものが向いています');
+    notes.push('🌬️ 風が強めなので、軽すぎる羽織りより風を通しにくいものが向いています');
   }
-  if (!notes.length) notes.push('大きな注意点は少なく、時間帯ごとの気温に合わせればよさそうです');
+  if (!notes.length) notes.push('🌿 大きな注意点は少なく、時間帯ごとの気温に合わせればよさそうです');
   return notes.join('。') + '。';
 }
 
@@ -231,22 +231,20 @@ function buildPostContent_(days, now) {
 
 function buildRuleBasedPostContent_(days, now) {
   const lines = [
-    `天気と服装メモ（${CONFIG.locationName}）`,
+    `天気予報（${CONFIG.locationName}）`,
     `自動投稿: ${Utilities.formatDate(now, CONFIG.timezone, 'yyyy/MM/dd HH:mm')}`,
-    '',
-    '朝昼晩の体感温度、湿度、風、雨を見て服装を分けています。',
   ];
 
   days.forEach(day => {
     lines.push('', `## ${day.label}（${day.dateKey}）`, day.dayAdvice, '');
-    lines.push('| 時間帯 | 天気 | 気温・体感 | 湿度/風/雨 | 服装 |');
+    lines.push('| 時間帯 | 天気 | 気温・体感 | 体感メモ | 服装 |');
     lines.push('|---|---|---|---|---|');
     day.periods.forEach(period => {
       lines.push([
         period.label,
         period.weatherLabel,
         `${formatRange_(period.tempMin, period.tempMax)} / 体感${formatRange_(period.apparentMin, period.apparentMax)}`,
-        `湿度${formatNumber_(period.humidityAvg)}%・風${formatNumber_(period.windMax)}km/h・雨${formatRain_(period)}`,
+        formatComfortMemo_(period),
         period.outfit,
       ].join(' | ').replace(/^/, '| ').replace(/$/, ' |'));
     });
@@ -267,6 +265,9 @@ function generateGeminiWeatherComment_(ruleBased, days) {
     '- 今日と明日を分ける',
     '- 朝・昼・晩ごとに天気、体感、服装を簡潔に残す',
     '- 気温だけでなく湿度、風、雨による体感も反映する',
+    '- タイトルは「天気予報」にする',
+    '- 湿度、風、雨は数値の羅列ではなく、蒸し暑い、カラッとしている、弱い風、小雨などの体感語にする',
+    '- 絵文字を使って視認性を上げる',
     '- 体感温度が一日中25度以上なら、脱ぎ着や羽織りより暑さ対策を優先する',
     '- 風が強くても暑い日は防風上着を勧めず、通気性と水分補給を優先する',
     '- Markdownの表を使ってよい',
@@ -356,29 +357,29 @@ function readJsonFile_(file) {
 
 function weatherCodeToLabel_(code) {
   const labels = {
-    0: '快晴',
-    1: '晴れ',
-    2: '一部くもり',
-    3: 'くもり',
-    45: '霧',
-    48: '霧氷',
-    51: '弱い霧雨',
-    53: '霧雨',
-    55: '強い霧雨',
-    61: '弱い雨',
-    63: '雨',
-    65: '強い雨',
-    71: '弱い雪',
-    73: '雪',
-    75: '強い雪',
-    80: '弱いにわか雨',
-    81: 'にわか雨',
-    82: '強いにわか雨',
-    95: '雷雨',
-    96: '雷雨',
-    99: '強い雷雨',
+    0: '☀️ 快晴',
+    1: '☀️ 晴れ',
+    2: '🌤️ 一部くもり',
+    3: '☁️ くもり',
+    45: '🌫️ 霧',
+    48: '🌫️ 霧氷',
+    51: '🌦️ 弱い霧雨',
+    53: '🌦️ 霧雨',
+    55: '🌧️ 強い霧雨',
+    61: '🌦️ 弱い雨',
+    63: '🌧️ 雨',
+    65: '🌧️ 強い雨',
+    71: '🌨️ 弱い雪',
+    73: '🌨️ 雪',
+    75: '❄️ 強い雪',
+    80: '🌦️ 弱いにわか雨',
+    81: '🌧️ にわか雨',
+    82: '⛈️ 強いにわか雨',
+    95: '⛈️ 雷雨',
+    96: '⛈️ 雷雨',
+    99: '⛈️ 強い雷雨',
   };
-  return labels[Math.round(code)] || '天気不明';
+  return labels[Math.round(code)] || '❔ 天気不明';
 }
 
 function pickRepresentativeWeatherCode_(codes) {
@@ -453,9 +454,51 @@ function formatRange_(minValue, maxValue) {
   return `${formatNumber_(minValue)}〜${formatNumber_(maxValue)}度`;
 }
 
-function formatRain_(period) {
-  const precipitation = isFiniteNumber_(period.precipitationSum) ? `${formatNumber_(period.precipitationSum, 1)}mm` : '-mm';
-  if (!isFiniteNumber_(period.precipitationProbabilityMax)) return precipitation;
-  const probability = `${formatNumber_(period.precipitationProbabilityMax)}%`;
-  return `${probability}/${precipitation}`;
+function formatComfortMemo_(period) {
+  return [
+    formatHumidityFeel_(period),
+    formatWindFeel_(period),
+    formatRainFeel_(period),
+  ].join('・');
+}
+
+function formatHumidityFeel_(period) {
+  const humidity = firstFinite_(period.humidityAvg, NaN);
+  const feel = firstFinite_(period.apparentAvg, period.tempAvg, NaN);
+  if (!isFiniteNumber_(humidity)) return '💧 湿度不明';
+
+  if (isFiniteNumber_(feel) && feel >= 28 && humidity >= 75) return '🥵 かなり蒸し暑い';
+  if (isFiniteNumber_(feel) && feel >= 25 && humidity >= 65) return '💦 蒸し暑い';
+  if (humidity >= 80) return '💧 しっとり湿度高め';
+  if (humidity >= 65) return '💧 ややムシムシ';
+  if (humidity >= 45) return '🌿 さらっと普通';
+  return '🏜️ 乾燥気味';
+}
+
+function formatWindFeel_(period) {
+  const wind = firstFinite_(period.windMax, NaN);
+  if (!isFiniteNumber_(wind)) return '🍃 風不明';
+
+  if (wind < 2) return '🍃 ほぼ無風';
+  if (wind < 8) return '🍃 弱い風';
+  if (wind < 18) return '🌬️ 風あり';
+  if (wind < 30) return '🌬️ 強めの風';
+  return '💨 強風';
+}
+
+function formatRainFeel_(period) {
+  const probability = period.precipitationProbabilityMax;
+  const precipitation = firstFinite_(period.precipitationSum, 0);
+
+  if (isFiniteNumber_(probability)) {
+    if (probability < 20) return `☀️ 雨ほぼなし（${formatNumber_(probability)}%）`;
+    if (probability < 40) return `🌂 念のため傘（${formatNumber_(probability)}%）`;
+    if (probability < 70) return `☔ 雨に注意（${formatNumber_(probability)}%）`;
+    return `☔ 雨高め（${formatNumber_(probability)}%）`;
+  }
+
+  if (!isFiniteNumber_(precipitation) || precipitation <= 0) return '☀️ 雨なし';
+  if (precipitation < 1) return `🌂 小雨かも（${formatNumber_(precipitation, 1)}mm）`;
+  if (precipitation < 5) return `☔ 雨（${formatNumber_(precipitation, 1)}mm）`;
+  return `⛈️ 強い雨（${formatNumber_(precipitation, 1)}mm）`;
 }
