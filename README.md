@@ -41,3 +41,13 @@
 | AI要約 | Worker のシークレットに `GEMINI_API_KEY` がある場合は Gemini 3.5 Flash を優先して要約します。 |
 | 代替処理 | Gemini APIが使えない場合は Workers AI、最後に本文抜粋ベースの要約へフォールバックします。 |
 | キャッシュ | 要約結果が古く残らないよう、WorkerのJSONレスポンスは `Cache-Control: no-store` にしています。 |
+
+## 天気と服装の自動投稿
+
+| 項目 | 内容 |
+|---|---|
+| Apps Script | `apps-script/weather-auto-post/Code.gs` をGoogle Apps Scriptへ貼り付けて使います。 |
+| 実行タイミング | `installMorningWeatherTrigger` を実行すると、毎朝6時台に投稿します。 |
+| 天気API | Open-Meteo JMA APIで東京・新宿の今日と明日を取得します。 |
+| 投稿内容 | 朝、昼、晩の天気、体感温度、湿度、風、雨、服装提案を日記JSONへ追記します。 |
+| AI利用 | Apps Scriptのスクリプトプロパティに `GEMINI_API_KEY` がある場合だけ、文章化にGeminiを使います。 |
