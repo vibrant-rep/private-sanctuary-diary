@@ -16,6 +16,8 @@
     <!-- Markdown renderer & sanitizer -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/marked/16.3.0/lib/marked.umd.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/dompurify/3.2.6/purify.min.js"></script>
+    <!-- Fuzzy search -->
+    <script src="https://cdn.jsdelivr.net/npm/fuse.js@7.1.0/dist/fuse.min.js"></script>
     
     <!-- Google Identity Services (OAuth2) -->
     <script src="https://accounts.google.com/gsi/client" async defer></script>
@@ -179,7 +181,6 @@
             const [isImageUploading, setIsImageUploading] = useState(false);
             const [imageUploadProgress, setImageUploadProgress] = useState(0);
             const [searchQuery, setSearchQuery] = useState('');
-            const [aiSearchMode, setAiSearchMode] = useState(false);
             const [contentFilter, setContentFilter] = useState('all');
             const [selectedSearchMessageId, setSelectedSearchMessageId] = useState(null);
             const [previewImage, setPreviewImage] = useState(null);
@@ -1188,38 +1189,58 @@
             const activeContentFilterMeta = contentFilterOptions.find(option => option.id === contentFilter) || contentFilterOptions[0];
 
             const getSearchResults = () => {
-                if (!searchQuery.trim()) return [];
-                const results = [];
-                const query = searchQuery.toLowerCase();
+                const rawQuery = searchQuery.trim();
+                if (!rawQuery) return [];
 
+                const query = rawQuery.toLowerCase();
+                const docs = [];
                 Object.keys(notes).forEach(dk => {
                     getFilteredNotes(notes[dk]).forEach(msg => {
-                        const matchesText = msg.content.toLowerCase().includes(query);
-                        let matchesAi = false;
-                        if (aiSearchMode) {
-                            const aiSynonyms = {
-                                'お茶': ['茶', '烏龍茶', '紅茶', 'カフェ', '喫茶店', 'ドリンク', 'スタバ', 'コーヒー'],
-                                'カフェ': ['喫茶店', 'スタバ', 'コーヒー', '新宿', '作業', 'コワーキング'],
-                                '買い物': ['購入', '買った', 'メルカリ', 'Amazon', 'ポチ', 'スーパー', 'コンビニ'],
-                                '仕事': ['作業', '開発', 'コード', 'ミーティング', 'タスク', 'Teams', 'エンジニア'],
-                                'アイディア': ['閃き', '設計', 'ブレスト', '構想', 'コンセプト', 'ひらめき'],
-                            };
-                            Object.keys(aiSynonyms).forEach(key => {
-                                if (query.includes(key)) {
-                                    aiSynonyms[key].forEach(synonym => {
-                                        if (msg.content.toLowerCase().includes(synonym)) {
-                                            matchesAi = true;
-                                        }
-                                    });
-                                }
-                            });
-                        }
-                        if (matchesText || matchesAi) {
-                            results.push({ dateKey: dk, message: msg, isAiMatched: !matchesText && matchesAi });
-                        }
+                        docs.push({
+                            key: `${dk}:${msg.id}`,
+                            dateKey: dk,
+                            message: msg,
+                            content: msg.content || '',
+                            type: msg.type || 'text',
+                        });
                     });
                 });
-                return results.sort((a, b) => b.dateKey.localeCompare(a.dateKey));
+
+                const byDateDesc = (a, b) => b.dateKey.localeCompare(a.dateKey);
+                const results = [];
+                const added = new Set();
+                docs
+                    .filter(doc => doc.content.toLowerCase().includes(query))
+                    .sort(byDateDesc)
+                    .forEach(doc => {
+                        added.add(doc.key);
+                        results.push({ dateKey: doc.dateKey, message: doc.message, matchType: 'exact' });
+                    });
+
+                if (rawQuery.length >= 2 && window.Fuse) {
+                    const fuse = new window.Fuse(docs, {
+                        keys: [
+                            { name: 'content', weight: 0.9 },
+                            { name: 'dateKey', weight: 0.05 },
+                            { name: 'type', weight: 0.05 },
+                        ],
+                        threshold: 0.38,
+                        distance: 120,
+                        ignoreLocation: true,
+                        includeScore: true,
+                        minMatchCharLength: 2,
+                    });
+
+                    fuse.search(rawQuery)
+                        .filter(({ item }) => !added.has(item.key))
+                        .slice(0, 40)
+                        .forEach(({ item }) => {
+                            added.add(item.key);
+                            results.push({ dateKey: item.dateKey, message: item.message, matchType: 'fuzzy' });
+                        });
+                }
+
+                return results.slice(0, 80);
             };
 
             const searchResults = getSearchResults();
@@ -1757,17 +1778,6 @@
                                     </button>
                                 )}
                             </div>
-                            {searchQuery && (
-                                <div className="flex items-center justify-between bg-slate-950 px-2 py-1 rounded border border-slate-800 text-xs">
-                                    <span className="text-slate-400 flex items-center gap-1">
-                                        <i data-lucide="sparkles" className="w-3.5 h-3.5 text-indigo-400"></i> AI検索フィルター
-                                    </span>
-                                    <label className="relative inline-flex items-center cursor-pointer">
-                                        <input type="checkbox" checked={aiSearchMode} onChange={() => setAiSearchMode(!aiSearchMode)} className="sr-only peer"/>
-                                        <div className="w-7 h-4 bg-slate-800 rounded-full peer peer-checked:after:translate-x-full peer-checked:bg-indigo-600 after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-slate-300 after:rounded-full after:h-3 after:w-3 after:transition-all"></div>
-                                    </label>
-                                </div>
-                            )}
                             <div className="space-y-2 pt-1">
                                 <div className="flex items-center justify-between">
                                     <span className="text-[10px] font-semibold text-slate-500">絞り込み</span>
@@ -1808,7 +1818,7 @@
                                 <p className="text-xs text-slate-400 p-2 font-semibold">
                                     検索結果: {searchResults.length} 件{contentFilter !== 'all' ? `（${activeContentFilterMeta.label}）` : ''}
                                 </p>
-                                {searchResults.map(({ dateKey: resDateKey, message, isAiMatched }) => (
+                                {searchResults.map(({ dateKey: resDateKey, message, matchType }) => (
                                     <button
                                         key={message.id}
                                         onClick={() => {
@@ -1827,10 +1837,10 @@
                                         <p className="text-xs text-slate-200 line-clamp-2">
                                             <HighlightedText text={message.content} />
                                         </p>
-                                        {isAiMatched && (
+                                        {matchType === 'fuzzy' && (
                                             <span className="text-[10px] text-indigo-300 flex items-center gap-1">
-                                                <i data-lucide="sparkles" className="w-3 h-3"></i>
-                                                AI検索一致
+                                                <i data-lucide="wand-2" className="w-3 h-3"></i>
+                                                あいまい一致
                                             </span>
                                         )}
                                     </button>
