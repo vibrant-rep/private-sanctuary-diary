@@ -166,7 +166,9 @@ function buildOutfitAdvice_(summary) {
   const wind = firstFinite_(summary.windMax, 0);
   const rainLikely = firstFinite_(summary.precipitationProbabilityMax, 0) >= 50 || firstFinite_(summary.precipitationSum, 0) >= 1;
   const muggy = feel >= 25 && humidity >= 70;
-  const windyCold = wind >= 7 || feel <= firstFinite_(summary.tempAvg, feel) - 3;
+  const windyCold = feel < 18 && (wind >= 7 || feel <= firstFinite_(summary.tempAvg, feel) - 3);
+  const hot = feel >= 28;
+  const veryHot = feel >= 32;
 
   let base;
   if (feel < 5) {
@@ -183,9 +185,10 @@ function buildOutfitAdvice_(summary) {
 
   const notes = [];
   if (muggy) notes.push('蒸し暑いので通気性重視');
-  if (windyCold && feel < 18) notes.push('風を通しにくい上着が安心');
+  if (veryHot) notes.push('水分補給と日差し対策を優先');
+  if (windyCold) notes.push('風を通しにくい上着が安心');
   if (rainLikely) notes.push('傘と濡れてもよい靴');
-  if (firstFinite_(summary.tempMax, feel) - firstFinite_(summary.tempMin, feel) >= 7) notes.push('脱ぎ着しやすく');
+  if (!hot && firstFinite_(summary.tempMax, feel) - firstFinite_(summary.tempMin, feel) >= 7) notes.push('脱ぎ着しやすく');
 
   return notes.length ? `${base}。${notes.join('、')}。` : `${base}。`;
 }
@@ -197,15 +200,23 @@ function buildDayAdvice_(periods) {
   const maxFeel = max_(allApparent.length ? allApparent : allTemps);
   const maxRain = max_(periods.map(period => period.precipitationProbabilityMax).filter(isFiniteNumber_));
   const maxWind = max_(periods.map(period => period.windMax).filter(isFiniteNumber_));
+  const allDayHot = isFiniteNumber_(minFeel) && minFeel >= 25;
+  const veryHot = isFiniteNumber_(maxFeel) && maxFeel >= 35;
 
   const notes = [];
-  if (isFiniteNumber_(minFeel) && isFiniteNumber_(maxFeel) && maxFeel - minFeel >= 8) {
+  if (allDayHot) {
+    notes.push('体感は一日を通して高めなので、基本はTシャツのみでよさそうです');
+  }
+  if (veryHot) {
+    notes.push('昼は体感温度がかなり高く、羽織りよりも水分補給・日差し対策・通気性を優先したい日です');
+  }
+  if (!allDayHot && isFiniteNumber_(minFeel) && isFiniteNumber_(maxFeel) && maxFeel - minFeel >= 8) {
     notes.push('朝晩と昼の体感差が大きいので、脱ぎ着しやすい服装がよさそうです');
   }
   if (isFiniteNumber_(maxRain) && maxRain >= 50) {
     notes.push('雨具を持って出るのが安心です');
   }
-  if (isFiniteNumber_(maxWind) && maxWind >= 8) {
+  if (!allDayHot && isFiniteNumber_(maxWind) && maxWind >= 8) {
     notes.push('風が強めなので、軽すぎる羽織りより風を通しにくいものが向いています');
   }
   if (!notes.length) notes.push('大きな注意点は少なく、時間帯ごとの気温に合わせればよさそうです');
@@ -256,6 +267,8 @@ function generateGeminiWeatherComment_(ruleBased, days) {
     '- 今日と明日を分ける',
     '- 朝・昼・晩ごとに天気、体感、服装を簡潔に残す',
     '- 気温だけでなく湿度、風、雨による体感も反映する',
+    '- 体感温度が一日中25度以上なら、脱ぎ着や羽織りより暑さ対策を優先する',
+    '- 風が強くても暑い日は防風上着を勧めず、通気性と水分補給を優先する',
     '- Markdownの表を使ってよい',
     '- 余計な前置きは不要',
     '',
@@ -441,7 +454,8 @@ function formatRange_(minValue, maxValue) {
 }
 
 function formatRain_(period) {
-  const probability = isFiniteNumber_(period.precipitationProbabilityMax) ? `${formatNumber_(period.precipitationProbabilityMax)}%` : '確率-';
   const precipitation = isFiniteNumber_(period.precipitationSum) ? `${formatNumber_(period.precipitationSum, 1)}mm` : '-mm';
+  if (!isFiniteNumber_(period.precipitationProbabilityMax)) return precipitation;
+  const probability = `${formatNumber_(period.precipitationProbabilityMax)}%`;
   return `${probability}/${precipitation}`;
 }
