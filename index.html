@@ -646,6 +646,23 @@
                 showNotification('ドメインURLをコピーしました！');
             };
 
+            const copyTextToClipboard = async (text) => {
+                if (navigator.clipboard && window.isSecureContext) {
+                    await navigator.clipboard.writeText(text);
+                    return;
+                }
+
+                const dummy = document.createElement('textarea');
+                dummy.value = text;
+                dummy.setAttribute('readonly', '');
+                dummy.style.position = 'fixed';
+                dummy.style.opacity = '0';
+                document.body.appendChild(dummy);
+                dummy.select();
+                document.execCommand('copy');
+                document.body.removeChild(dummy);
+            };
+
             const handleConnectDrive = () => {
                 if (!clientId) {
                     showNotification('クライアントIDを入力してください', 'error');
@@ -1110,6 +1127,22 @@
 
                 if (accessToken && folderId) {
                     await pullAndMergeSync(accessToken, folderId, diaryFileId, updatedNotes);
+                }
+            };
+
+            const handleCopyMessage = async (message) => {
+                const text = (message.content || '').trim();
+                if (!text) {
+                    showNotification('コピーできる本文がありません', 'error');
+                    return;
+                }
+
+                try {
+                    await copyTextToClipboard(text);
+                    showNotification('投稿本文をコピーしました', 'info');
+                } catch (err) {
+                    console.error('Copy message failed', err);
+                    showNotification('コピーに失敗しました', 'error');
                 }
             };
 
@@ -2199,6 +2232,14 @@
                                                     </div>
 
                                                     <div className="opacity-100 md:opacity-0 group-hover:opacity-100 flex flex-col gap-1 transition-all self-center md:self-start">
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => handleCopyMessage(msg)}
+                                                            className="p-1.5 text-slate-600 hover:text-emerald-400 hover:bg-emerald-950/30 rounded-lg transition-all"
+                                                            title="本文をコピー"
+                                                        >
+                                                            <i data-lucide="copy" className="w-3.5 h-3.5"></i>
+                                                        </button>
                                                         <button
                                                             type="button"
                                                             onClick={() => startEditingMessage(dateKey, msg)}
