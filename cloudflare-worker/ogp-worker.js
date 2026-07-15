@@ -126,6 +126,15 @@ function getExtension(url = "") {
   }
 }
 
+function isTikTokUrl(url) {
+  try {
+    const host = new URL(url).hostname.replace(/^www\./, "").toLowerCase();
+    return host === "tiktok.com" || host === "m.tiktok.com" || host === "vm.tiktok.com" || host === "vt.tiktok.com";
+  } catch {
+    return false;
+  }
+}
+
 function inferVideoType(url = "", declaredType = "") {
   const type = declaredType.trim().toLowerCase();
   if (type.startsWith("video/") || type.includes("mpegurl")) return type;
@@ -379,7 +388,9 @@ async function handleRequest(request, env) {
   const siteName = findMeta(html, ["og:site_name", "application-name"]) || targetUrl.hostname.replace(/^www\./, "");
   const videoMeta = findVideoMeta(html, targetUrl.href);
   const articleText = findArticleText(html);
-  const summary = await generateSummary(env, { title, description, siteName, articleText });
+  const summary = isTikTokUrl(targetUrl.href)
+    ? ""
+    : await generateSummary(env, { title, description, siteName, articleText });
 
   return json({
     url: targetUrl.href,
