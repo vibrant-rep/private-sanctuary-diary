@@ -398,7 +398,7 @@
                         }
                         if (preview?.summary) {
                             const host = getUrlMeta(url).host;
-                            summaries.push(urls.length === 1 ? preview.summary : `${host}: ${preview.summary}`);
+                            summaries.push(urls.length === 1 ? preview.summary : `【${host}】\n${preview.summary}`);
                         }
                     } catch (err) {
                         setUrlPreviewCache(prev => ({
@@ -411,7 +411,7 @@
                 }
 
                 if (summaries.length === 0) return text;
-                return `${trimmed}\n\nAI要約: ${summaries.join(' / ')}`;
+                return `${trimmed}\n\nAI要約:\n${summaries.join('\n\n')}`;
             };
 
             const createImageThumbnail = (file, maxSize = 480, quality = 0.72) => {

@@ -210,36 +210,111 @@ function getAiResponseText(result) {
 
 function normalizeSummary(value) {
   const normalized = value
-    .replace(/[\r\n]+/g, " ")
     .replace(/^["'「『\s]+|["'」』\s]+$/g, "")
     .replace(/^AI要約[:：]\s*/i, "")
-    .replace(/\s+/g, " ")
+    .replace(/\r\n/g, "\n")
+    .split("\n")
+    .map(line => line.replace(/\s+/g, " ").trim())
+    .filter(Boolean)
+    .map(line => line.replace(/^[・*]\s*/, "- "))
+    .join("\n")
     .trim();
 
-  if (normalized.length <= 180) return normalized;
+  if (normalized.length <= 520) return normalized;
 
-  const clipped = normalized.slice(0, 180);
+  const clipped = normalized.slice(0, 520);
+  const lastLineBreak = clipped.lastIndexOf("\n");
+  if (lastLineBreak > 260) return clipped.slice(0, lastLineBreak).trim();
+
   const lastSentenceEnd = Math.max(
     clipped.lastIndexOf("。"),
     clipped.lastIndexOf("！"),
     clipped.lastIndexOf("？")
   );
-  if (lastSentenceEnd > 70) return clipped.slice(0, lastSentenceEnd + 1).trim();
+  if (lastSentenceEnd > 180) return clipped.slice(0, lastSentenceEnd + 1).trim();
   return clipped.trim();
+}
+
+function buildStructuredSummary(overview, points = []) {
+  const cleanOverview = overview.replace(/\s+/g, " ").trim();
+  let cleanPoints = points
+    .map(point => point.replace(/\s+/g, " ").trim())
+    .filter(point => point && point !== cleanOverview)
+    .slice(0, 3);
+
+  if (cleanPoints.length === 0 && cleanOverview) {
+    cleanPoints = cleanOverview
+      .split(/[。.!?！？]/)
+      .map(point => point.trim())
+      .filter(point => point.length > 12)
+      .slice(0, 3);
+  }
+
+  if (!cleanOverview && cleanPoints.length === 0) return "";
+
+  return [
+    `概要: ${cleanOverview}`,
+    "ポイント:",
+    ...cleanPoints.map(point => `- ${point}`),
+  ].join("\n");
+}
+
+function getSummaryPointCandidates({ description, articleText }, overview = "") {
+  const source = `${description || ""}。${articleText || ""}`
+    .replace(/\s+/g, " ")
+    .trim();
+  if (!source) return [];
+
+  const overviewTerms = new Set(
+    overview
+      .replace(/[。、，,.!?！？:：・「」『』()[\]\s]/g, " ")
+      .split(/\s+/)
+      .filter(term => term.length >= 6)
+  );
+
+  return source
+    .split(/[。.!?！？]/)
+    .map(sentence => sentence.trim())
+    .filter(sentence => sentence.length >= 18 && sentence.length <= 140)
+    .filter(sentence => {
+      const normalized = sentence.replace(/\s+/g, "");
+      if (!normalized) return false;
+      if (overview.replace(/\s+/g, "").includes(normalized.slice(0, 24))) return false;
+      const hasOverlap = [...overviewTerms].some(term => normalized.includes(term));
+      return !hasOverlap || sentence.length > 45;
+    })
+    .slice(0, 3);
+}
+
+function ensureStructuredSummary(summary, summaryInput) {
+  const normalized = normalizeSummary(summary);
+  if (!normalized) return "";
+  if (/^概要[:：]/m.test(normalized) && /^ポイント[:：]/m.test(normalized)) return normalized;
+
+  const overview = normalized
+    .replace(/^概要[:：]\s*/i, "")
+    .split("\n")
+    .filter(line => !/^[-・*]\s*/.test(line) && !/^ポイント[:：]/.test(line))
+    .join(" ")
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, 220);
+
+  return buildStructuredSummary(overview, getSummaryPointCandidates(summaryInput, overview));
 }
 
 function fallbackSummary({ title, description, articleText }) {
   const source = description && description.length > 80 ? description : articleText;
   if (source && source.length > 80) {
-    return source
+    const sentences = source
       .replace(/\s+/g, " ")
       .replace(/^(概要|はじめに|対象読者|導入|本文)\s+/, "")
       .split(/[。.!?]/)
       .filter(Boolean)
-      .slice(0, 2)
-      .join("。")
-      .slice(0, 140)
-      .trim();
+      .map(sentence => sentence.trim())
+      .filter(sentence => sentence.length > 12);
+    const overview = sentences.slice(0, 2).join("。").slice(0, 180);
+    return buildStructuredSummary(overview, sentences.slice(2, 5));
   }
 
   const shortSource = description || title || "";
@@ -257,12 +332,12 @@ function buildSummaryPrompt({ title, description, siteName, articleText }) {
     `タイトル: ${title}`,
     `概要: ${description}`,
     `サイト: ${siteName}`,
-    `本文抜粋: ${articleText.slice(0, 700)}`,
+    `本文抜粋: ${articleText.slice(0, 1800)}`,
   ].filter(line => line.replace(/^[^:]+:\s*/, "").trim()).join("\n");
 
   return {
     sourceText,
-    instruction: `以下の記事本文を、内容が分かるように日本語で2行程度に要約してください。ハッシュタグやキーワード列挙は使わず、普通の文章の要約だけを出力してください。\n\n${sourceText}`,
+    instruction: `以下の記事を、後から読み返すための読書メモとして日本語で要約してください。出力形式は必ず次の形にしてください。\n\n概要: 記事全体の主旨を1〜2文で具体的に説明\nポイント:\n- 重要な論点、手順、事実、示唆を1点\n- 重要な論点、手順、事実、示唆を1点\n- 必要ならもう1点\n\n条件:\n- 「概要:」と「ポイント:」の見出しを必ず含める\n- サイト説明ではなく、本文内容を要約する\n- タイトルの言い換えだけにしない\n- ハッシュタグやキーワード列挙だけにしない\n- 各ポイントは短いが意味が分かる文にする\n\n${sourceText}`,
   };
 }
 
@@ -280,14 +355,14 @@ async function generateGeminiSummary(env, summaryInput) {
           role: "user",
           parts: [
             {
-              text: `あなたは日本語ネイティブの編集者です。Web記事の内容を、自然で読みやすい読書メモとして要約します。出力は要約文だけにしてください。\n\n${instruction}`,
+              text: `あなたは日本語ネイティブの編集者です。Web記事の内容を、自然で読みやすい読書メモとして要約します。指定形式以外の前置きや解説は出力しないでください。\n\n${instruction}`,
             },
           ],
         },
       ],
       generationConfig: {
         temperature: 0.35,
-        maxOutputTokens: 180,
+        maxOutputTokens: 360,
       },
     }),
     signal: AbortSignal.timeout(25000),
@@ -296,10 +371,11 @@ async function generateGeminiSummary(env, summaryInput) {
   const data = await response.json();
   if (!response.ok) throw new Error(data.error?.message || `Gemini failed: ${response.status}`);
 
-  return normalizeSummary(
+  return ensureStructuredSummary(
     data.candidates?.[0]?.content?.parts
       ?.map(part => part.text || "")
-      .join(" ") || ""
+      .join("\n") || "",
+    summaryInput
   );
 }
 
@@ -314,7 +390,7 @@ async function generateWorkersAiSummary(env, summaryInput) {
     top_p: 0.9,
   });
 
-  return normalizeSummary(getAiResponseText(result));
+  return ensureStructuredSummary(getAiResponseText(result), summaryInput);
 }
 
 async function generateSummary(env, { title, description, siteName, articleText }) {
