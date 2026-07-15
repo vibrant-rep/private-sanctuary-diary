@@ -16,8 +16,6 @@
     <!-- Markdown renderer & sanitizer -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/marked/16.3.0/lib/marked.umd.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/dompurify/3.2.6/purify.min.js"></script>
-    <!-- Fuzzy search -->
-    <script src="https://cdn.jsdelivr.net/npm/fuse.js@7.1.0/dist/fuse.min.js"></script>
     
     <!-- Google Identity Services (OAuth2) -->
     <script src="https://accounts.google.com/gsi/client" async defer></script>
@@ -1193,54 +1191,16 @@
                 if (!rawQuery) return [];
 
                 const query = rawQuery.toLowerCase();
-                const docs = [];
+                const results = [];
                 Object.keys(notes).forEach(dk => {
                     getFilteredNotes(notes[dk]).forEach(msg => {
-                        docs.push({
-                            key: `${dk}:${msg.id}`,
-                            dateKey: dk,
-                            message: msg,
-                            content: msg.content || '',
-                            type: msg.type || 'text',
-                        });
+                        if ((msg.content || '').toLowerCase().includes(query)) {
+                            results.push({ dateKey: dk, message: msg });
+                        }
                     });
                 });
 
-                const byDateDesc = (a, b) => b.dateKey.localeCompare(a.dateKey);
-                const results = [];
-                const added = new Set();
-                docs
-                    .filter(doc => doc.content.toLowerCase().includes(query))
-                    .sort(byDateDesc)
-                    .forEach(doc => {
-                        added.add(doc.key);
-                        results.push({ dateKey: doc.dateKey, message: doc.message, matchType: 'exact' });
-                    });
-
-                if (rawQuery.length >= 2 && window.Fuse) {
-                    const fuse = new window.Fuse(docs, {
-                        keys: [
-                            { name: 'content', weight: 0.9 },
-                            { name: 'dateKey', weight: 0.05 },
-                            { name: 'type', weight: 0.05 },
-                        ],
-                        threshold: 0.38,
-                        distance: 120,
-                        ignoreLocation: true,
-                        includeScore: true,
-                        minMatchCharLength: 2,
-                    });
-
-                    fuse.search(rawQuery)
-                        .filter(({ item }) => !added.has(item.key))
-                        .slice(0, 40)
-                        .forEach(({ item }) => {
-                            added.add(item.key);
-                            results.push({ dateKey: item.dateKey, message: item.message, matchType: 'fuzzy' });
-                        });
-                }
-
-                return results.slice(0, 80);
+                return results.sort((a, b) => b.dateKey.localeCompare(a.dateKey));
             };
 
             const searchResults = getSearchResults();
@@ -1818,7 +1778,7 @@
                                 <p className="text-xs text-slate-400 p-2 font-semibold">
                                     検索結果: {searchResults.length} 件{contentFilter !== 'all' ? `（${activeContentFilterMeta.label}）` : ''}
                                 </p>
-                                {searchResults.map(({ dateKey: resDateKey, message, matchType }) => (
+                                {searchResults.map(({ dateKey: resDateKey, message }) => (
                                     <button
                                         key={message.id}
                                         onClick={() => {
@@ -1837,12 +1797,6 @@
                                         <p className="text-xs text-slate-200 line-clamp-2">
                                             <HighlightedText text={message.content} />
                                         </p>
-                                        {matchType === 'fuzzy' && (
-                                            <span className="text-[10px] text-indigo-300 flex items-center gap-1">
-                                                <i data-lucide="wand-2" className="w-3 h-3"></i>
-                                                あいまい一致
-                                            </span>
-                                        )}
                                     </button>
                                 ))}
                             </div>
