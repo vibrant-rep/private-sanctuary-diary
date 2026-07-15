@@ -131,7 +131,7 @@
     <div id="root" class="h-full w-full"></div>
 
     <script type="text/babel">
-        const { useState, useEffect, useRef } = React;
+        const { useState, useEffect, useLayoutEffect, useRef } = React;
 
         const formatDateKey = (date) => {
             const y = date.getFullYear();
@@ -224,6 +224,7 @@
             const previewRequestIdRef = useRef(0);
             const shouldAutoScrollRef = useRef(true);
             const shouldNotifyTimelineUpdateRef = useRef(false);
+            const preservedTimelineScrollTopRef = useRef(null);
 
             const selectDiaryDate = (date) => {
                 const nextDate = new Date(date);
@@ -277,6 +278,24 @@
                     messagesEndRef.current?.scrollIntoView({ behavior });
                 });
             };
+
+            const preserveTimelineScrollPosition = () => {
+                const container = timelineScrollRef.current;
+                preservedTimelineScrollTopRef.current = container ? container.scrollTop : null;
+                shouldAutoScrollRef.current = false;
+                shouldNotifyTimelineUpdateRef.current = false;
+                setHasTimelineUpdates(false);
+            };
+
+            useLayoutEffect(() => {
+                if (preservedTimelineScrollTopRef.current === null) return;
+                const container = timelineScrollRef.current;
+                if (container) {
+                    const maxScrollTop = Math.max(0, container.scrollHeight - container.clientHeight);
+                    container.scrollTop = Math.min(preservedTimelineScrollTopRef.current, maxScrollTop);
+                }
+                preservedTimelineScrollTopRef.current = null;
+            }, [notes, selectedDate]);
 
             useEffect(() => {
                 if (selectedSearchMessageId) return;
@@ -1156,6 +1175,7 @@
                 );
                 const updatedNotes = { ...notes, [dateKey]: updatedDay };
 
+                preserveTimelineScrollPosition();
                 setNotes(updatedNotes);
                 showNotification('メモを削除しました', 'info');
 
