@@ -165,6 +165,8 @@
             return null;
         };
 
+        const hasStoredDriveSession = () => Boolean(localStorage.getItem('gdrive_access_token'));
+
         function App() {
             const [notes, setNotes] = useState(() => {
                 const saved = localStorage.getItem('gdrive_diary_notes');
@@ -190,14 +192,13 @@
             const [isSidebarOpen, setIsSidebarOpen] = useState(false);
 
             const [activeTab, setActiveTab] = useState(() => {
-                const session = getStoredSession();
-                return session ? 'timeline' : 'settings';
+                return hasStoredDriveSession() ? 'timeline' : 'settings';
             });
 
             const DEFAULT_CLIENT_ID = '758701255049-qg5hkjsna49m57ce8g8ht1av95v5f8tv.apps.googleusercontent.com';
             const [clientId, setClientId] = useState(() => localStorage.getItem('gdrive_client_id') || DEFAULT_CLIENT_ID);
             const [accessToken, setAccessToken] = useState(() => getStoredSession());
-            const [syncStatus, setSyncStatus] = useState(() => getStoredSession() ? 'connected' : 'disconnected');
+            const [syncStatus, setSyncStatus] = useState(() => getStoredSession() ? 'connected' : hasStoredDriveSession() ? 'connecting' : 'disconnected');
             const [isManualSyncing, setIsManualSyncing] = useState(false);
             const [syncLog, setSyncLog] = useState('');
             const [folderId, setFolderId] = useState(null);
@@ -639,7 +640,7 @@
                             callback: async (resp) => {
                                 if (resp.error) {
                                     setSyncStatus('error');
-                                    setSyncLog(`認証エラー: ${resp.error}`);
+                                    setSyncLog(`Google Driveの再接続に失敗しました: ${resp.error}。日記はこの端末の保存データで閲覧できます。`);
                                     return;
                                 }
                                 
@@ -650,6 +651,7 @@
 
                                 setAccessToken(resp.access_token);
                                 setSyncStatus('connected');
+                                setActiveTab('timeline');
                                 showNotification('Googleアカウントと接続しました', 'success');
                                 setSyncLog('認証成功。Google Drive内の専用フォルダをスキャン中...');
                                 await initializeDriveSync(resp.access_token);
@@ -659,13 +661,15 @@
                         const existingToken = getStoredSession();
                         if (existingToken) {
                             setSyncStatus('connected');
+                            setActiveTab('timeline');
                             setSyncLog('有効なセッションを検出。同期を実行中...');
                             initializeDriveSync(existingToken);
                         } else {
                             const pastToken = localStorage.getItem('gdrive_access_token');
                             if (pastToken) {
                                 setSyncStatus('connecting');
-                                setSyncLog('期限切れセッションの再接続を裏で自動試行中...');
+                                setActiveTab('timeline');
+                                setSyncLog('Google Driveへ裏で再接続中です。日記はこの端末の保存データで閲覧できます。');
                                 tokenClientRef.current.requestAccessToken({ prompt: '' });
                             }
                         }
@@ -718,6 +722,23 @@
                 document.body.removeChild(dummy);
             };
 
+            const ensureDriveResponseOk = async (response, fallbackMessage) => {
+                if (response.ok) return await response.json();
+
+                let data = {};
+                try {
+                    data = await response.json();
+                } catch {
+                    data = {};
+                }
+
+                if (response.status === 401 || response.status === 403) {
+                    throw new Error('Google Driveの認証が期限切れです。設定から再接続してください。');
+                }
+
+                throw new Error(data.error?.message || fallbackMessage);
+            };
+
             const handleConnectDrive = () => {
                 if (!clientId) {
                     showNotification('クライアントIDを入力してください', 'error');
@@ -732,6 +753,7 @@
 
                 localStorage.setItem('gdrive_client_id', clientId);
                 setSyncStatus('connecting');
+                setSyncLog('Google Driveへの接続を開始しています...');
                 
                 if (tokenClientRef.current) {
                     tokenClientRef.current.requestAccessToken({ prompt: 'consent' });
@@ -747,7 +769,7 @@
                     const response = await fetch(`https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent(q)}&fields=files(id)`, {
                         headers: { Authorization: `Bearer ${token}` }
                     });
-                    const resData = await response.json();
+                    const resData = await ensureDriveResponseOk(response, '同期フォルダの確認に失敗しました');
                     
                     let activeFolderId = null;
                     if (resData.files && resData.files.length > 0) {
@@ -766,7 +788,7 @@
                                 mimeType: 'application/vnd.google-apps.folder'
                             })
                         });
-                        const newFolder = await createResp.json();
+                        const newFolder = await ensureDriveResponseOk(createResp, '同期フォルダの作成に失敗しました');
                         activeFolderId = newFolder.id;
                         setSyncLog('同期フォルダを新規作成しました。');
                     }
@@ -776,7 +798,7 @@
 
                 } catch (err) {
                     setSyncStatus('error');
-                    setSyncLog(`初期化処理失敗: ${err.message}`);
+                    setSyncLog(`初期化処理失敗: ${err.message} 日記はこの端末の保存データで閲覧できます。`);
                 }
             };
 
@@ -792,7 +814,7 @@
                     const response = await fetch(`https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent(q)}&fields=files(id)`, {
                         headers: { Authorization: `Bearer ${token}` }
                     });
-                    const resData = await response.json();
+                    const resData = await ensureDriveResponseOk(response, 'クラウドデータの検索に失敗しました');
 
                     let fileId = fFileId;
                     let cloudNotes = {};
