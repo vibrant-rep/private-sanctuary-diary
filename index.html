@@ -138,6 +138,18 @@
             --theme-accent-1: #818cf8;
             --theme-accent-2: #312e81;
             --theme-accent-soft: rgba(99, 102, 241, 0.16);
+            --theme-danger-bg: rgba(127, 29, 29, 0.42);
+            --theme-danger-bg-hover: rgba(127, 29, 29, 0.78);
+            --theme-danger-border: rgba(127, 29, 29, 0.72);
+            --theme-danger-text: #fecaca;
+            --theme-success-bg: #064e3b;
+            --theme-success-border: #065f46;
+            --theme-success-text: #a7f3d0;
+            --theme-warning-bg: #451a03;
+            --theme-warning-border: #92400e;
+            --theme-warning-text: #fcd34d;
+            --theme-highlight-bg: rgba(251, 191, 36, 0.26);
+            --theme-highlight-text: #fef3c7;
         }
         body[data-theme="light"] {
             --theme-bg-0: #f8fafc;
@@ -153,36 +165,85 @@
             --theme-accent-1: #4f46e5;
             --theme-accent-2: #4338ca;
             --theme-accent-soft: rgba(99, 102, 241, 0.12);
+            --theme-danger-bg: #fff1f2;
+            --theme-danger-bg-hover: #ffe4e6;
+            --theme-danger-border: #fecdd3;
+            --theme-danger-text: #be123c;
+            --theme-success-bg: #ecfdf5;
+            --theme-success-border: #a7f3d0;
+            --theme-success-text: #047857;
+            --theme-warning-bg: #fffbeb;
+            --theme-warning-border: #fde68a;
+            --theme-warning-text: #b45309;
+            --theme-highlight-bg: #fef3c7;
+            --theme-highlight-text: #78350f;
         }
         body[data-theme] {
             background: var(--theme-bg-0) !important;
             color: var(--theme-text-0) !important;
         }
-        [class~="bg-slate-950"] { background-color: var(--theme-bg-0) !important; }
-        [class~="bg-slate-900"] { background-color: var(--theme-bg-1) !important; }
-        [class~="bg-slate-800"] { background-color: var(--theme-bg-2) !important; }
+        body[data-theme="light"] [class~="bg-slate-950/70"],
+        body[data-theme="light"] [class~="bg-slate-950/80"],
+        body[data-theme="light"] [class~="bg-slate-900/80"] {
+            background-color: var(--theme-bg-1) !important;
+        }
+        [class~="bg-slate-950"], [class~="bg-slate-950/70"], [class~="bg-slate-950/80"] { background-color: var(--theme-bg-0) !important; }
+        [class~="bg-slate-900"], [class~="bg-slate-900/80"], [class~="hover:bg-slate-900"]:hover { background-color: var(--theme-bg-1) !important; }
+        [class~="bg-slate-800"], [class~="hover:bg-slate-800"]:hover { background-color: var(--theme-bg-2) !important; }
         [class~="bg-slate-900/40"], [class~="bg-slate-900/50"], [class~="hover:bg-slate-900/30"]:hover { background-color: color-mix(in srgb, var(--theme-bg-1) 62%, transparent) !important; }
         [class~="border-slate-900"], [class~="border-slate-800"] { border-color: var(--theme-border-0) !important; }
-        [class~="border-slate-700"] { border-color: var(--theme-border-1) !important; }
+        [class~="border-slate-700"], [class~="hover:border-slate-700"]:hover { border-color: var(--theme-border-1) !important; }
         [class~="text-slate-100"], [class~="text-slate-200"] { color: var(--theme-text-0) !important; }
-        [class~="text-slate-300"] { color: var(--theme-text-1) !important; }
+        [class~="text-slate-300"], [class~="hover:text-slate-300"]:hover { color: var(--theme-text-1) !important; }
         [class~="text-slate-400"], [class~="text-slate-500"] { color: var(--theme-text-2) !important; }
         [class~="text-slate-600"] { color: var(--theme-text-3) !important; }
         [class~="text-white"] { color: #ffffff !important; }
+        [class~="hover:text-white"]:hover { color: var(--theme-text-0) !important; }
         [class~="bg-indigo-600"], [class~="hover:bg-indigo-600"]:hover { background-color: var(--theme-accent-0) !important; }
-        [class~="bg-indigo-700"], [class~="hover:bg-indigo-700"]:hover { background-color: color-mix(in srgb, var(--theme-accent-0) 78%, #000) !important; }
+        [class~="bg-indigo-700"], [class~="hover:bg-indigo-700"]:hover, [class~="hover:bg-indigo-500"]:hover { background-color: color-mix(in srgb, var(--theme-accent-0) 78%, #000) !important; }
         [class~="bg-indigo-950"], [class~="bg-indigo-950/50"], [class~="bg-indigo-950/60"], [class~="hover:bg-indigo-950/30"]:hover {
             background-color: var(--theme-accent-soft) !important;
         }
-        [class~="text-indigo-200"], [class~="text-indigo-300"], [class~="text-indigo-400"], [class~="hover:text-indigo-300"]:hover, [class~="hover:text-indigo-400"]:hover {
+        [class~="text-indigo-200"], [class~="text-indigo-300"], [class~="text-indigo-400"], [class~="text-indigo-400/70"], [class~="hover:text-indigo-300"]:hover, [class~="hover:text-indigo-400"]:hover {
             color: var(--theme-accent-1) !important;
         }
-        [class~="border-indigo-500"], [class~="border-indigo-500/40"], [class~="border-indigo-500/50"], [class~="focus:border-indigo-500"]:focus {
+        [class~="border-indigo-500"], [class~="border-indigo-500/40"], [class~="border-indigo-500/50"], [class~="border-indigo-900/70"], [class~="hover:border-indigo-700"]:hover, [class~="focus:border-indigo-500"]:focus {
             border-color: var(--theme-accent-0) !important;
         }
+        [class~="bg-red-950"], [class~="bg-red-950/40"] { background-color: var(--theme-danger-bg) !important; }
+        [class~="hover:bg-red-950/80"]:hover, [class~="hover:bg-red-950/30"]:hover { background-color: var(--theme-danger-bg-hover) !important; }
+        [class~="border-red-900/50"], [class~="border-red-800"] { border-color: var(--theme-danger-border) !important; }
+        [class~="text-red-200"], [class~="text-red-400"], [class~="hover:text-red-400"]:hover { color: var(--theme-danger-text) !important; }
+        [class~="bg-emerald-950"] { background-color: var(--theme-success-bg) !important; }
+        [class~="border-emerald-800"] { border-color: var(--theme-success-border) !important; }
+        [class~="text-emerald-200"], [class~="text-emerald-400"], [class~="hover:text-emerald-400"]:hover { color: var(--theme-success-text) !important; }
+        [class~="bg-amber-950"] { background-color: var(--theme-warning-bg) !important; }
+        [class~="border-amber-800"] { border-color: var(--theme-warning-border) !important; }
+        [class~="text-amber-400"] { color: var(--theme-warning-text) !important; }
+        [class~="bg-amber-400/25"] { background-color: var(--theme-highlight-bg) !important; }
+        [class~="text-amber-100"] { color: var(--theme-highlight-text) !important; }
         [class~="ring-indigo-500"], [class~="focus:ring-indigo-500"]:focus { --tw-ring-color: var(--theme-accent-0) !important; }
-        .markdown-body blockquote { border-left-color: var(--theme-accent-0); }
+        .markdown-body h1,
+        .markdown-body h2,
+        .markdown-body h3,
+        .markdown-body th { color: var(--theme-text-0); }
+        .markdown-body blockquote {
+            border-left-color: var(--theme-accent-0);
+            color: var(--theme-text-1);
+        }
+        .markdown-body code,
+        .markdown-body pre {
+            background: var(--theme-bg-0);
+            border-color: var(--theme-border-0);
+        }
+        .markdown-body pre code {
+            background: transparent;
+        }
         .markdown-body a { color: var(--theme-accent-1); }
+        .markdown-body hr { border-top-color: var(--theme-border-0); }
+        .markdown-body th,
+        .markdown-body td { border-color: var(--theme-border-0); }
+        .markdown-body th { background: var(--theme-bg-2); }
     </style>
 </head>
 <body class="bg-slate-950 text-slate-100 font-sans antialiased overflow-hidden h-[100dvh] w-screen select-none">
