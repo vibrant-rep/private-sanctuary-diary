@@ -139,50 +139,20 @@
             --theme-accent-2: #312e81;
             --theme-accent-soft: rgba(99, 102, 241, 0.16);
         }
-        body[data-theme="forest"] {
-            --theme-bg-0: #03120d;
-            --theme-bg-1: #0b1f18;
-            --theme-bg-2: #143126;
-            --theme-border-0: #1d3f32;
-            --theme-border-1: #2b5a47;
-            --theme-text-0: #ecfdf5;
-            --theme-text-1: #cceadd;
-            --theme-text-2: #93c5ad;
-            --theme-text-3: #5f8d78;
-            --theme-accent-0: #10b981;
-            --theme-accent-1: #34d399;
-            --theme-accent-2: #064e3b;
-            --theme-accent-soft: rgba(16, 185, 129, 0.16);
-        }
-        body[data-theme="sepia"] {
-            --theme-bg-0: #17110b;
-            --theme-bg-1: #251a10;
-            --theme-bg-2: #3a2a1a;
-            --theme-border-0: #4a3522;
-            --theme-border-1: #684a2c;
-            --theme-text-0: #fff7ed;
-            --theme-text-1: #ead7bf;
-            --theme-text-2: #c4a989;
-            --theme-text-3: #927459;
-            --theme-accent-0: #d97706;
-            --theme-accent-1: #f59e0b;
-            --theme-accent-2: #78350f;
-            --theme-accent-soft: rgba(217, 119, 6, 0.18);
-        }
-        body[data-theme="rose"] {
-            --theme-bg-0: #160713;
-            --theme-bg-1: #240d1d;
-            --theme-bg-2: #3a162f;
-            --theme-border-0: #4a1d3d;
-            --theme-border-1: #6b2a56;
-            --theme-text-0: #fff1f7;
-            --theme-text-1: #f4cfe1;
-            --theme-text-2: #d8a0bd;
-            --theme-text-3: #a9788f;
-            --theme-accent-0: #db2777;
-            --theme-accent-1: #f472b6;
-            --theme-accent-2: #831843;
-            --theme-accent-soft: rgba(219, 39, 119, 0.18);
+        body[data-theme="light"] {
+            --theme-bg-0: #f8fafc;
+            --theme-bg-1: #ffffff;
+            --theme-bg-2: #eef2ff;
+            --theme-border-0: #e2e8f0;
+            --theme-border-1: #c7d2fe;
+            --theme-text-0: #0f172a;
+            --theme-text-1: #334155;
+            --theme-text-2: #64748b;
+            --theme-text-3: #94a3b8;
+            --theme-accent-0: #6366f1;
+            --theme-accent-1: #4f46e5;
+            --theme-accent-2: #4338ca;
+            --theme-accent-soft: rgba(99, 102, 241, 0.12);
         }
         body[data-theme] {
             background: var(--theme-bg-0) !important;
@@ -198,6 +168,7 @@
         [class~="text-slate-300"] { color: var(--theme-text-1) !important; }
         [class~="text-slate-400"], [class~="text-slate-500"] { color: var(--theme-text-2) !important; }
         [class~="text-slate-600"] { color: var(--theme-text-3) !important; }
+        [class~="text-white"] { color: #ffffff !important; }
         [class~="bg-indigo-600"], [class~="hover:bg-indigo-600"]:hover { background-color: var(--theme-accent-0) !important; }
         [class~="bg-indigo-700"], [class~="hover:bg-indigo-700"]:hover { background-color: color-mix(in srgb, var(--theme-accent-0) 78%, #000) !important; }
         [class~="bg-indigo-950"], [class~="bg-indigo-950/50"], [class~="bg-indigo-950/60"], [class~="hover:bg-indigo-950/30"]:hover {
@@ -255,10 +226,8 @@
 
         const hasStoredDriveSession = () => Boolean(localStorage.getItem('gdrive_access_token'));
         const THEME_OPTIONS = [
-            { id: 'midnight', label: 'ミッドナイト', color: '#6366f1' },
-            { id: 'forest', label: 'フォレスト', color: '#10b981' },
-            { id: 'sepia', label: 'セピア', color: '#d97706' },
-            { id: 'rose', label: 'ローズ', color: '#db2777' },
+            { id: 'dark', label: 'ダーク', icon: 'moon', color: '#6366f1' },
+            { id: 'light', label: 'ライト', icon: 'sun', color: '#6366f1' },
         ];
 
         function App() {
@@ -307,8 +276,8 @@
             const [editingText, setEditingText] = useState('');
             const [hasTimelineUpdates, setHasTimelineUpdates] = useState(false);
             const [themeId, setThemeId] = useState(() => {
-                const saved = localStorage.getItem('diary_theme_id') || 'midnight';
-                return THEME_OPTIONS.some(theme => theme.id === saved) ? saved : 'midnight';
+                const saved = localStorage.getItem('diary_theme_id') || 'dark';
+                return THEME_OPTIONS.some(theme => theme.id === saved) ? saved : 'dark';
             });
 
             const [currentOrigin, setCurrentOrigin] = useState('');
@@ -2168,24 +2137,21 @@
                                             <i data-lucide="palette" className="w-4 h-4 text-indigo-400"></i>
                                             テーマ
                                         </h3>
-                                        <span className="text-[10px] text-slate-500">色味のみ変更</span>
+                                        <span className="text-[10px] text-slate-500">パープルアクセント</span>
                                     </div>
-                                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                                    <div className="grid grid-cols-2 gap-2">
                                         {THEME_OPTIONS.map(theme => (
                                             <button
                                                 key={theme.id}
                                                 type="button"
                                                 onClick={() => setThemeId(theme.id)}
-                                                className={`min-h-11 rounded-lg border px-3 py-2 text-left transition-colors flex items-center gap-2 ${
+                                                className={`min-h-12 rounded-lg border px-3 py-2 text-left transition-colors flex items-center gap-2 ${
                                                     themeId === theme.id
                                                         ? 'border-indigo-500 bg-indigo-950/60 text-indigo-200'
                                                         : 'border-slate-800 bg-slate-950 text-slate-400 hover:border-slate-700 hover:bg-slate-800'
                                                 }`}
                                             >
-                                                <span
-                                                    className="w-3.5 h-3.5 rounded-full border border-white/20 shrink-0"
-                                                    style={{ backgroundColor: theme.color }}
-                                                />
+                                                <i data-lucide={theme.icon} className="w-4 h-4 text-indigo-400 shrink-0"></i>
                                                 <span className="text-xs font-semibold truncate">{theme.label}</span>
                                             </button>
                                         ))}
