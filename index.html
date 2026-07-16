@@ -254,13 +254,12 @@
             // スマホ用サイドバー開閉ステート
             const [isSidebarOpen, setIsSidebarOpen] = useState(false);
 
-            const [activeTab, setActiveTab] = useState(() => {
-                return hasStoredDriveSession() ? 'timeline' : 'settings';
-            });
+            const [activeTab, setActiveTab] = useState('timeline');
 
             const DEFAULT_CLIENT_ID = '758701255049-qg5hkjsna49m57ce8g8ht1av95v5f8tv.apps.googleusercontent.com';
             const [clientId, setClientId] = useState(() => localStorage.getItem('gdrive_client_id') || DEFAULT_CLIENT_ID);
             const [accessToken, setAccessToken] = useState(() => getStoredSession());
+            const [hasDriveSession, setHasDriveSession] = useState(() => hasStoredDriveSession());
             const [syncStatus, setSyncStatus] = useState(() => getStoredSession() ? 'connected' : hasStoredDriveSession() ? 'connecting' : 'disconnected');
             const [isManualSyncing, setIsManualSyncing] = useState(false);
             const [syncLog, setSyncLog] = useState('');
@@ -722,6 +721,7 @@
                                 localStorage.setItem('gdrive_token_expires', expiresAt.toString());
 
                                 setAccessToken(resp.access_token);
+                                setHasDriveSession(true);
                                 setSyncStatus('connected');
                                 setActiveTab('timeline');
                                 showNotification('Googleアカウントと接続しました', 'success');
@@ -732,6 +732,7 @@
 
                         const existingToken = getStoredSession();
                         if (existingToken) {
+                            setHasDriveSession(true);
                             setSyncStatus('connected');
                             setActiveTab('timeline');
                             setSyncLog('有効なセッションを検出。同期を実行中...');
@@ -739,6 +740,7 @@
                         } else {
                             const pastToken = localStorage.getItem('gdrive_access_token');
                             if (pastToken) {
+                                setHasDriveSession(true);
                                 setSyncStatus('connecting');
                                 setActiveTab('timeline');
                                 setSyncLog('Google Driveへ裏で再接続中です。日記はこの端末の保存データで閲覧できます。');
@@ -759,10 +761,11 @@
                         localStorage.removeItem('gdrive_access_token');
                         localStorage.removeItem('gdrive_token_expires');
                         setAccessToken(null);
+                        setHasDriveSession(false);
                         setSyncStatus('disconnected');
                         setSyncLog('ログアウトしました。次回アクセス時は再度サインインが必要です。');
                         showNotification('ログアウトしました', 'info');
-                        setActiveTab('settings');
+                        setActiveTab('timeline');
                     });
                 }
             };
@@ -1865,6 +1868,56 @@
                         </div>
                     )}
 
+                    {!hasDriveSession && (
+                        <div className="fixed inset-0 z-[70] bg-slate-950/90 backdrop-blur-md flex items-center justify-center p-4">
+                            <div className="w-full max-w-md rounded-2xl border border-slate-800 bg-slate-900 p-6 md:p-7 shadow-2xl space-y-5">
+                                <div className="flex items-start gap-3">
+                                    <div className="w-11 h-11 rounded-xl bg-indigo-600 text-white flex items-center justify-center shrink-0">
+                                        <i data-lucide="cloud" className="w-5 h-5"></i>
+                                    </div>
+                                    <div className="min-w-0">
+                                        <p className="text-[10px] font-bold tracking-wider text-indigo-400">PRIVATE SANCTUARY</p>
+                                        <h2 className="text-xl font-bold text-slate-100 mt-1">Googleでログイン</h2>
+                                        <p className="text-xs text-slate-400 leading-relaxed mt-2">
+                                            日記データと画像・動画をあなたのGoogle Driveへ保存し、端末間で同期します。
+                                        </p>
+                                    </div>
+                                </div>
+
+                                <div className="grid grid-cols-3 gap-2 text-center">
+                                    <div className="bg-slate-950 border border-slate-800 rounded-lg p-3">
+                                        <i data-lucide="file-text" className="w-4 h-4 mx-auto text-indigo-400 mb-1"></i>
+                                        <p className="text-[10px] text-slate-400">日記JSON</p>
+                                    </div>
+                                    <div className="bg-slate-950 border border-slate-800 rounded-lg p-3">
+                                        <i data-lucide="image" className="w-4 h-4 mx-auto text-indigo-400 mb-1"></i>
+                                        <p className="text-[10px] text-slate-400">メディア保存</p>
+                                    </div>
+                                    <div className="bg-slate-950 border border-slate-800 rounded-lg p-3">
+                                        <i data-lucide="refresh-cw" className="w-4 h-4 mx-auto text-indigo-400 mb-1"></i>
+                                        <p className="text-[10px] text-slate-400">端末同期</p>
+                                    </div>
+                                </div>
+
+                                <button
+                                    type="button"
+                                    onClick={handleConnectDrive}
+                                    disabled={syncStatus === 'connecting'}
+                                    className="w-full bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white font-semibold py-3 px-4 rounded-xl text-sm transition-colors flex items-center justify-center gap-2"
+                                >
+                                    <i data-lucide={syncStatus === 'connecting' ? 'loader' : 'log-in'} className={`w-4 h-4 ${syncStatus === 'connecting' ? 'animate-spin' : ''}`}></i>
+                                    {syncStatus === 'connecting' ? 'Googleへ接続中...' : 'Googleでログイン'}
+                                </button>
+
+                                {syncLog && (
+                                    <div className="bg-slate-950 p-3 rounded border border-slate-800 text-[10px] font-mono text-slate-400 max-h-24 overflow-y-auto whitespace-pre-wrap leading-relaxed">
+                                        {syncLog}
+                                    </div>
+                                )}
+                            </div>
+                        </div>
+                    )}
+
                     {/* モバイル時のサイドバー背景オーバーレイ */}
                     {isSidebarOpen && (
                         <div 
@@ -2045,9 +2098,9 @@
                                     <div>
                                         <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full uppercase tracking-wider ${syncStatusMeta.className}`}>{syncStatusMeta.label}</span>
                                         <h2 className="text-lg md:text-xl font-bold mt-1.5 mb-1 flex items-center gap-2">
-                                            <i data-lucide="key-round" className="text-indigo-400"></i> Google Driveに接続
+                                            <i data-lucide="settings" className="text-indigo-400"></i> 設定
                                         </h2>
-                                        <p className="text-xs text-slate-400">日記データと画像・動画を自分のGoogle Driveへ保存します。</p>
+                                        <p className="text-xs text-slate-400">同期状態、テーマ、ログアウトを管理します。</p>
                                     </div>
                                     <button 
                                         onClick={() => setIsSidebarOpen(true)}
@@ -2063,9 +2116,9 @@
                                             <i data-lucide="cloud" className="w-5 h-5"></i>
                                         </div>
                                         <div className="min-w-0">
-                                            <h3 className="text-base font-bold text-slate-100">{accessToken ? 'Google Drive同期が有効です' : 'Googleアカウントでログイン'}</h3>
+                                            <h3 className="text-base font-bold text-slate-100">{accessToken ? 'Google Drive同期が有効です' : 'Google Driveへ再接続が必要です'}</h3>
                                             <p className="text-xs text-slate-400 leading-relaxed mt-1">
-                                                {accessToken ? 'この端末の投稿はGoogle Drive内の同期ファイルへ保存され、他の端末とマージされます。' : 'ログインすると、テキスト、URLカード、画像サムネイル、画像・動画保存が使えるようになります。'}
+                                                {accessToken ? 'この端末の投稿はGoogle Drive内の同期ファイルへ保存され、他の端末とマージされます。' : '日記はこの端末の保存データで閲覧できます。同期を再開するにはGoogleへ再接続してください。'}
                                             </p>
                                         </div>
                                     </div>
@@ -2093,7 +2146,7 @@
                                                 className="bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white font-semibold py-3 px-4 rounded-xl text-sm transition-colors flex items-center justify-center gap-2"
                                             >
                                                 <i data-lucide={syncStatus === 'connecting' ? 'loader' : 'log-in'} className={`w-4 h-4 ${syncStatus === 'connecting' ? 'animate-spin' : ''}`}></i>
-                                                Googleでログイン
+                                                Googleへ再接続
                                             </button>
                                         ) : (
                                             <button
@@ -2158,70 +2211,16 @@
                                     </div>
                                 </div>
 
-                                <details className="bg-slate-900 border border-slate-800 rounded-xl overflow-hidden">
-                                    <summary className="cursor-pointer list-none p-4 md:p-5 flex items-center justify-between text-sm font-semibold text-slate-200">
-                                        <span className="flex items-center gap-2">
-                                            <i data-lucide="settings" className="w-4 h-4 text-slate-400"></i>
-                                            詳細設定
-                                        </span>
-                                        <i data-lucide="chevron-down" className="w-4 h-4 text-slate-500"></i>
-                                    </summary>
-                                    <div className="px-4 md:px-5 pb-5 space-y-4 border-t border-slate-800">
-                                        <div className="pt-4 space-y-2">
-                                            <label className="text-[10px] text-slate-400 block font-semibold">OAuth CLIENT ID</label>
-                                            <input
-                                                type="text"
-                                                placeholder="xxxxxx-xxxxxx.apps.googleusercontent.com"
-                                                value={clientId}
-                                                onChange={e => setClientId(e.target.value)}
-                                                className="w-full bg-slate-950 border border-slate-800 rounded px-3 py-2 text-xs text-slate-200 focus:outline-none focus:border-indigo-500 font-mono"
-                                            />
-                                        </div>
-
-                                        <div className="space-y-2">
-                                            <div className="flex items-center gap-2 text-slate-300 text-xs font-semibold">
-                                                <i data-lucide="globe" className="w-3.5 h-3.5"></i>
-                                                <span>承認済みJavaScript生成元</span>
-                                            </div>
-                                            <div className="flex gap-2">
-                                                <input
-                                                    type="text"
-                                                    readOnly
-                                                    value={currentOrigin || 'ドメインを取得中...'}
-                                                    className="bg-slate-950 border border-slate-800 rounded px-3 py-2 text-xs text-indigo-400 font-mono flex-1 focus:outline-none min-w-0"
-                                                />
-                                                <button
-                                                    onClick={handleCopyOrigin}
-                                                    className="bg-slate-800 hover:bg-slate-700 text-slate-200 font-semibold px-3 py-2 rounded text-xs transition-colors flex items-center gap-1 shrink-0"
-                                                >
-                                                    <i data-lucide="copy" className="w-3.5 h-3.5"></i>
-                                                    <span className="hidden sm:inline">コピー</span>
-                                                </button>
-                                            </div>
-                                        </div>
-
-                                        <div className="space-y-2">
-                                            <label className="text-[10px] text-slate-400 block font-semibold">OGP WORKER URL</label>
-                                            <input
-                                                type="url"
-                                                placeholder="https://your-worker.your-name.workers.dev"
-                                                value={ogpWorkerUrl}
-                                                onChange={e => setOgpWorkerUrl(e.target.value)}
-                                                className="w-full bg-slate-950 border border-slate-800 rounded px-3 py-2 text-xs text-slate-200 focus:outline-none focus:border-indigo-500 font-mono"
-                                            />
-                                            <p className="text-[10px] text-slate-500">設定するとURLカードにタイトル、説明、サムネイル画像を表示します。</p>
-                                        </div>
-
-                                        {accessToken && (
-                                            <button
-                                                onClick={handleSignOut}
-                                                className="bg-red-950/40 hover:bg-red-950/80 text-red-200 border border-red-900/50 font-semibold py-2.5 px-4 rounded-xl text-xs transition-colors flex items-center gap-1.5"
-                                            >
-                                                <i data-lucide="log-out" className="w-3.5 h-3.5"></i> ログアウト
-                                            </button>
-                                        )}
+                                {hasDriveSession && (
+                                    <div className="bg-slate-900 border border-slate-800 p-4 md:p-5 rounded-xl">
+                                        <button
+                                            onClick={handleSignOut}
+                                            className="bg-red-950/40 hover:bg-red-950/80 text-red-200 border border-red-900/50 font-semibold py-2.5 px-4 rounded-xl text-xs transition-colors flex items-center gap-1.5"
+                                        >
+                                            <i data-lucide="log-out" className="w-3.5 h-3.5"></i> ログアウト
+                                        </button>
                                     </div>
-                                </details>
+                                )}
 
                                 <button onClick={() => setActiveTab('timeline')} className="text-xs text-indigo-400 hover:underline flex items-center gap-1 pt-2">
                                     <i data-lucide="chevron-left" className="w-4 h-4"></i> タイムライン（日記）に戻る
