@@ -299,19 +299,19 @@ function summarizePeriod_(weather, dateKey, period) {
 }
 
 function buildOutfitAdvice_(summary) {
-  const temp = firstFinite_(summary.tempAvg, summary.tempMax, 20);
-  const tempMin = firstFinite_(summary.tempMin, temp);
+  const feel = firstFinite_(summary.apparentAvg, summary.tempAvg, summary.tempMax, 20);
+  const feelMin = firstFinite_(summary.apparentMin, summary.tempMin, feel);
 
-  if (temp < 5) {
+  if (feel < 5) {
     return '🧥 ダウンジャケット＋厚手インナー';
-  } else if (temp < 13) {
+  } else if (feel < 13) {
     return '🧥 ダウンまたは厚手ジャケット';
-  } else if (temp < 21) {
+  } else if (feel < 21) {
     return '🧥 ジャケット＋Tシャツ';
-  } else if (temp < 28) {
-    return tempMin < 21 ? '👕 Tシャツ＋薄手の羽織り' : '👕 Tシャツ';
+  } else if (feel < 25) {
+    return feelMin < 21 ? '👕 Tシャツ＋薄手の羽織り' : '👕 Tシャツ';
   } else {
-    return '👕 Tシャツのみ';
+    return '👕 Tシャツ';
   }
 }
 
@@ -381,7 +381,8 @@ function generateGeminiWeatherComment_(ruleBased, days, attribution) {
     '- 体感温度という言葉と数値は出さない',
     '- 雨がほぼない、雨なし、雨0mmのような雨なし表現は出さない',
     '- 湿度、風、雨は必要なときだけ短い体感語にする',
-    '- 服装は「Tシャツのみ」「Tシャツ」「ジャケット＋Tシャツ」のように短く書く',
+    '- 服装は体感温度をもとに判定する。ただし体感温度の数値は出さない',
+    '- 服装は「Tシャツ」「ジャケット＋Tシャツ」のように短く書く',
     '- 通気性重視、水分補給、日差し対策、脱ぎ着しやすい、などの補足文は書かない',
     '- 絵文字を使って視認性を上げる',
     '- Markdownの表を使ってよい',
