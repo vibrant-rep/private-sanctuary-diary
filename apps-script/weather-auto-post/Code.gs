@@ -7,6 +7,7 @@ const CONFIG = {
   locationName: '東京・新宿',
   attribution: 'Weather data by Open-Meteo.com',
   weatherEndpoint: 'https://api.open-meteo.com/v1/jma',
+  weatherApiEndpoint: 'https://api.weatherapi.com/v1/forecast.json',
   retryFunctionName: 'retryDailyWeatherOutfit',
   retryDelayMinutes: 60,
   maxWeatherRetriesPerDay: 3,
@@ -36,7 +37,7 @@ function runWeatherPost_(options = {}) {
     const todayKey = formatDateKey_(now);
     const weather = fetchWeatherForecast_();
     const days = buildDailyWeatherOutfits_(weather, now);
-    const content = buildPostContent_(days, now);
+    const content = buildPostContent_(days, now, weather);
     upsertDiaryMessage_(todayKey, buildWeatherMessage_(todayKey, content, now));
     clearWeatherRetryState_(todayKey);
   } catch (err) {
@@ -68,7 +69,7 @@ function installMorningWeatherTrigger() {
 
 function isRetryableWeatherError_(err) {
   const message = String(err && err.message ? err.message : err);
-  return /Open-Meteo|429|limit|Too Many Requests|request failed/i.test(message);
+  return /Open-Meteo|WeatherAPI|429|limit|Too Many Requests|request failed/i.test(message);
 }
 
 function scheduleWeatherRetry_(dateKey, err) {
@@ -101,6 +102,90 @@ function clearWeatherRetryState_(dateKey) {
 }
 
 function fetchWeatherForecast_() {
+  const weatherApiKey = PropertiesService.getScriptProperties().getProperty('WEATHERAPI_KEY');
+  if (weatherApiKey) {
+    try {
+      return fetchWeatherApiForecast_(weatherApiKey);
+    } catch (err) {
+      console.warn(`WeatherAPI failed, falling back to Open-Meteo: ${err && err.message ? err.message : err}`);
+    }
+  }
+
+  return fetchOpenMeteoForecast_();
+}
+
+function fetchWeatherApiForecast_(apiKey) {
+  const params = {
+    key: apiKey,
+    q: `${CONFIG.latitude},${CONFIG.longitude}`,
+    days: 2,
+    aqi: 'no',
+    alerts: 'no',
+    lang: 'ja',
+  };
+  const url = `${CONFIG.weatherApiEndpoint}?${toQueryString_(params)}`;
+  const response = UrlFetchApp.fetch(url, { muteHttpExceptions: true });
+  if (response.getResponseCode() >= 400) {
+    throw new Error(`WeatherAPI request failed: ${response.getResponseCode()} ${response.getContentText()}`);
+  }
+
+  return normalizeWeatherApiForecast_(JSON.parse(response.getContentText()));
+}
+
+function normalizeWeatherApiForecast_(data) {
+  const hourly = {
+    time: [],
+    temperature_2m: [],
+    apparent_temperature: [],
+    relative_humidity_2m: [],
+    precipitation: [],
+    precipitation_probability: [],
+    weather_code: [],
+    wind_speed_10m: [],
+    wind_gusts_10m: [],
+  };
+
+  ((data.forecast || {}).forecastday || []).forEach(day => {
+    (day.hour || []).forEach(hour => {
+      hourly.time.push(String(hour.time || '').replace(' ', 'T'));
+      hourly.temperature_2m.push(readWeatherApiNumber_(hour.temp_c));
+      hourly.apparent_temperature.push(readWeatherApiNumber_(hour.feelslike_c));
+      hourly.relative_humidity_2m.push(readWeatherApiNumber_(hour.humidity));
+      hourly.precipitation.push(readWeatherApiNumber_(hour.precip_mm));
+      hourly.precipitation_probability.push(readWeatherApiNumber_(hour.chance_of_rain));
+      hourly.weather_code.push(mapWeatherApiConditionCode_(hour.condition && hour.condition.code));
+      hourly.wind_speed_10m.push(readWeatherApiNumber_(hour.wind_kph));
+      hourly.wind_gusts_10m.push(readWeatherApiNumber_(hour.gust_kph));
+    });
+  });
+
+  return { hourly, attribution: 'Weather data by WeatherAPI.com' };
+}
+
+function readWeatherApiNumber_(value) {
+  const number = Number(value);
+  return Number.isFinite(number) ? number : null;
+}
+
+function mapWeatherApiConditionCode_(code) {
+  const value = Number(code);
+  if ([1000].includes(value)) return 1;
+  if ([1003].includes(value)) return 2;
+  if ([1006, 1009].includes(value)) return 3;
+  if ([1030, 1135, 1147].includes(value)) return 45;
+  if ([1150, 1153, 1168].includes(value)) return 51;
+  if ([1171].includes(value)) return 55;
+  if ([1063, 1180, 1183, 1186, 1189, 1240].includes(value)) return 61;
+  if ([1192, 1195, 1243, 1246].includes(value)) return 63;
+  if ([1198, 1201].includes(value)) return 65;
+  if ([1066, 1069, 1072, 1114, 1204, 1207, 1210, 1213, 1249, 1255].includes(value)) return 71;
+  if ([1117, 1216, 1219, 1222, 1252, 1258].includes(value)) return 73;
+  if ([1225, 1237, 1261, 1264].includes(value)) return 75;
+  if ([1087, 1273, 1276, 1279, 1282].includes(value)) return 95;
+  return 3;
+}
+
+function fetchOpenMeteoForecast_() {
   const hourly = [
     'temperature_2m',
     'apparent_temperature',
@@ -131,7 +216,9 @@ function fetchWeatherForecast_() {
   for (const url of attempts) {
     const response = UrlFetchApp.fetch(url, { muteHttpExceptions: true });
     if (response.getResponseCode() < 400) {
-      return JSON.parse(response.getContentText());
+      const data = JSON.parse(response.getContentText());
+      data.attribution = CONFIG.attribution;
+      return data;
     }
     lastError = `${response.getResponseCode()} ${response.getContentText()}`;
   }
@@ -246,13 +333,13 @@ function buildDayAdvice_(periods) {
   return notes.length ? `${notes.join('。')}。` : '';
 }
 
-function buildPostContent_(days, now) {
-  const ruleBased = buildRuleBasedPostContent_(days, now);
-  const aiText = generateGeminiWeatherComment_(ruleBased, days);
+function buildPostContent_(days, now, weather) {
+  const ruleBased = buildRuleBasedPostContent_(days, now, weather);
+  const aiText = generateGeminiWeatherComment_(ruleBased, days, weather.attribution || CONFIG.attribution);
   return aiText || ruleBased;
 }
 
-function buildRuleBasedPostContent_(days, now) {
+function buildRuleBasedPostContent_(days, now, weather) {
   const lines = [
     `天気予報（${CONFIG.locationName}）`,
     `自動投稿: ${Utilities.formatDate(now, CONFIG.timezone, 'yyyy/MM/dd HH:mm')}`,
@@ -275,11 +362,11 @@ function buildRuleBasedPostContent_(days, now) {
     });
   });
 
-  lines.push('', CONFIG.attribution);
+  lines.push('', weather.attribution || CONFIG.attribution);
   return lines.join('\n');
 }
 
-function generateGeminiWeatherComment_(ruleBased, days) {
+function generateGeminiWeatherComment_(ruleBased, days, attribution) {
   const apiKey = PropertiesService.getScriptProperties().getProperty('GEMINI_API_KEY');
   if (!apiKey) return '';
 
@@ -326,7 +413,7 @@ function generateGeminiWeatherComment_(ruleBased, days) {
     .join('\n')
     .trim();
 
-  return text ? `${text}\n\n${CONFIG.attribution}` : '';
+  return text ? `${text}\n\n${attribution}` : '';
 }
 
 function buildWeatherMessage_(dateKey, content, now) {
