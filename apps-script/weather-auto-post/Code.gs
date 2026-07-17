@@ -7,6 +7,9 @@ const CONFIG = {
   locationName: '東京・新宿',
   attribution: 'Weather data by Open-Meteo.com',
   weatherEndpoint: 'https://api.open-meteo.com/v1/jma',
+  retryFunctionName: 'retryDailyWeatherOutfit',
+  retryDelayMinutes: 60,
+  maxWeatherRetriesPerDay: 3,
 };
 
 const PERIODS = [
@@ -16,6 +19,15 @@ const PERIODS = [
 ];
 
 function postDailyWeatherOutfit() {
+  runWeatherPost_({ allowRetry: true });
+}
+
+function retryDailyWeatherOutfit() {
+  clearWeatherRetryTriggers_();
+  runWeatherPost_({ allowRetry: true });
+}
+
+function runWeatherPost_(options = {}) {
   const lock = LockService.getScriptLock();
   lock.waitLock(30000);
 
@@ -26,18 +38,24 @@ function postDailyWeatherOutfit() {
     const days = buildDailyWeatherOutfits_(weather, now);
     const content = buildPostContent_(days, now);
     upsertDiaryMessage_(todayKey, buildWeatherMessage_(todayKey, content, now));
+    clearWeatherRetryState_(todayKey);
+  } catch (err) {
+    if (options.allowRetry && isRetryableWeatherError_(err)) {
+      scheduleWeatherRetry_(formatDateKey_(new Date()), err);
+    }
+    throw err;
   } finally {
     lock.releaseLock();
   }
 }
 
 function runWeatherOutfitOnceForTest() {
-  postDailyWeatherOutfit();
+  runWeatherPost_({ allowRetry: false });
 }
 
 function installMorningWeatherTrigger() {
   ScriptApp.getProjectTriggers()
-    .filter(trigger => trigger.getHandlerFunction() === 'postDailyWeatherOutfit')
+    .filter(trigger => ['postDailyWeatherOutfit', CONFIG.retryFunctionName].includes(trigger.getHandlerFunction()))
     .forEach(trigger => ScriptApp.deleteTrigger(trigger));
 
   ScriptApp.newTrigger('postDailyWeatherOutfit')
@@ -46,6 +64,40 @@ function installMorningWeatherTrigger() {
     .everyDays(1)
     .inTimezone(CONFIG.timezone)
     .create();
+}
+
+function isRetryableWeatherError_(err) {
+  const message = String(err && err.message ? err.message : err);
+  return /Open-Meteo|429|limit|Too Many Requests|request failed/i.test(message);
+}
+
+function scheduleWeatherRetry_(dateKey, err) {
+  const props = PropertiesService.getScriptProperties();
+  const key = `WEATHER_RETRY_COUNT_${dateKey}`;
+  const retryCount = Number(props.getProperty(key) || 0);
+  if (retryCount >= CONFIG.maxWeatherRetriesPerDay) {
+    console.error(`Weather retry limit reached for ${dateKey}: ${err && err.message ? err.message : err}`);
+    return;
+  }
+
+  props.setProperty(key, String(retryCount + 1));
+  clearWeatherRetryTriggers_();
+  ScriptApp.newTrigger(CONFIG.retryFunctionName)
+    .timeBased()
+    .after(CONFIG.retryDelayMinutes * 60 * 1000)
+    .create();
+  console.warn(`Scheduled weather retry ${retryCount + 1}/${CONFIG.maxWeatherRetriesPerDay} for ${dateKey}`);
+}
+
+function clearWeatherRetryTriggers_() {
+  ScriptApp.getProjectTriggers()
+    .filter(trigger => trigger.getHandlerFunction() === CONFIG.retryFunctionName)
+    .forEach(trigger => ScriptApp.deleteTrigger(trigger));
+}
+
+function clearWeatherRetryState_(dateKey) {
+  PropertiesService.getScriptProperties().deleteProperty(`WEATHER_RETRY_COUNT_${dateKey}`);
+  clearWeatherRetryTriggers_();
 }
 
 function fetchWeatherForecast_() {
