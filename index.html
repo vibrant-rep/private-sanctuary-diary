@@ -108,21 +108,39 @@
             margin: 0.85rem 0;
         }
         .markdown-body table {
-            border-collapse: collapse;
+            background: color-mix(in srgb, var(--theme-bg-1, #0f172a) 88%, transparent);
+            border: 1px solid var(--theme-border-0, #1e293b);
+            border-collapse: separate;
+            border-radius: 0.5rem;
+            border-spacing: 0;
             display: block;
-            margin: 0.65rem 0;
+            font-size: 0.8125rem;
+            line-height: 1.55;
+            margin: 0.75rem 0;
             overflow-x: auto;
             width: 100%;
         }
         .markdown-body th,
         .markdown-body td {
-            border: 1px solid #1e293b;
-            padding: 0.35rem 0.5rem;
+            border: 0;
+            border-bottom: 1px solid var(--theme-border-0, #1e293b);
+            padding: 0.5rem 0.65rem;
+            text-align: left;
+            vertical-align: top;
         }
         .markdown-body th {
-            background: #0f172a;
+            background: color-mix(in srgb, var(--theme-bg-2, #1e293b) 72%, transparent);
             color: #e2e8f0;
+            font-size: 0.72rem;
             font-weight: 700;
+            letter-spacing: 0;
+            white-space: nowrap;
+        }
+        .markdown-body tr:last-child td {
+            border-bottom: 0;
+        }
+        .markdown-body tbody tr:hover td {
+            background: color-mix(in srgb, var(--theme-accent-0, #6366f1) 7%, transparent);
         }
         body {
             --theme-bg-0: #020617;
@@ -241,9 +259,10 @@
         }
         .markdown-body a { color: var(--theme-accent-1); }
         .markdown-body hr { border-top-color: var(--theme-border-0); }
+        .markdown-body table { border-color: var(--theme-border-0); }
         .markdown-body th,
-        .markdown-body td { border-color: var(--theme-border-0); }
-        .markdown-body th { background: var(--theme-bg-2); }
+        .markdown-body td { border-bottom-color: var(--theme-border-0); }
+        .markdown-body th { background: color-mix(in srgb, var(--theme-bg-2) 72%, transparent); }
     </style>
 </head>
 <body class="bg-slate-950 text-slate-100 font-sans antialiased overflow-hidden h-[100dvh] w-screen select-none">
