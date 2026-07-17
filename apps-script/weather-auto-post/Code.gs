@@ -267,7 +267,7 @@ function buildRuleBasedPostContent_(days, now) {
     day.periods.forEach(period => {
       lines.push([
         period.label,
-        period.weatherLabel,
+        formatWeatherWithRainProbability_(period),
         formatRange_(period.tempMin, period.tempMax),
         formatComfortMemo_(period),
         period.outfit,
@@ -289,6 +289,7 @@ function generateGeminiWeatherComment_(ruleBased, days) {
     '条件:',
     '- 今日と明日を分ける',
     '- 朝・昼・晩ごとに天気、気温、メモ、服装を簡潔に残す',
+    '- 降水確率は天気列に「晴れ（降水20%）」のようにパーセントで添える',
     '- タイトルは「天気予報」にする',
     '- 体感温度という言葉と数値は出さない',
     '- 雨がほぼない、雨なし、雨0mmのような雨なし表現は出さない',
@@ -484,8 +485,13 @@ function formatComfortMemo_(period) {
   return [
     formatHumidityFeel_(period),
     formatWindFeel_(period),
-    formatRainFeel_(period),
   ].filter(Boolean).join('・') || '-';
+}
+
+function formatWeatherWithRainProbability_(period) {
+  const probability = period.precipitationProbabilityMax;
+  if (!isFiniteNumber_(probability)) return period.weatherLabel;
+  return `${period.weatherLabel}（降水${formatNumber_(probability)}%）`;
 }
 
 function formatHumidityFeel_(period) {
