@@ -381,6 +381,7 @@ function generateGeminiWeatherComment_(ruleBased, days, attribution) {
     '- 体感温度という言葉と数値は出さない',
     '- 雨がほぼない、雨なし、雨0mmのような雨なし表現は出さない',
     '- 湿度、風、雨は必要なときだけ短い体感語にする',
+    '- 気温が28度以上の時間帯で「さらっと」「普通」は使わない',
     '- 服装は体感温度をもとに判定する。ただし体感温度の数値は出さない',
     '- 服装は「Tシャツ」「ジャケット＋Tシャツ」のように短く書く',
     '- 通気性重視、水分補給、日差し対策、脱ぎ着しやすい、などの補足文は書かない',
@@ -585,13 +586,16 @@ function formatWeatherWithRainProbability_(period) {
 function formatHumidityFeel_(period) {
   const humidity = firstFinite_(period.humidityAvg, NaN);
   const temp = firstFinite_(period.tempAvg, NaN);
+  const feel = firstFinite_(period.apparentAvg, temp);
   if (!isFiniteNumber_(humidity)) return '💧 湿度不明';
 
-  if (isFiniteNumber_(temp) && temp >= 28 && humidity >= 75) return '🥵 かなり蒸し暑い';
-  if (isFiniteNumber_(temp) && temp >= 25 && humidity >= 65) return '💦 蒸し暑い';
+  if (isFiniteNumber_(feel) && feel >= 32 && humidity >= 65) return '🥵 かなり蒸し暑い';
+  if (isFiniteNumber_(feel) && feel >= 28 && humidity >= 60) return '💦 蒸し暑い';
+  if (isFiniteNumber_(feel) && feel >= 30) return '💧 ややムシムシ';
   if (humidity >= 80) return '💧 しっとり湿度高め';
   if (humidity >= 65) return '💧 ややムシムシ';
-  if (humidity >= 45) return '🌿 さらっと普通';
+  if (isFiniteNumber_(temp) && temp >= 28) return '🌿 湿度ふつう';
+  if (humidity >= 45) return '🌿 湿度ふつう';
   return '🏜️ 乾燥気味';
 }
 
