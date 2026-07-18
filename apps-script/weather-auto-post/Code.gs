@@ -372,8 +372,8 @@ function generateGeminiWeatherOneLine_(days) {
 
   const model = PropertiesService.getScriptProperties().getProperty('GEMINI_MODEL') || 'gemini-3.1-flash-lite';
   const prompt = [
-    '以下の天気データを見て、日記の天気予報に添える「今日の一言」を日本語で1文だけ作ってください。',
-    '条件: 35文字以内。絵文字は最大1つ。服装名は書かない。体感温度の数値は書かない。前置き不要。',
+    '以下の今日の天気データを見て、本日の天気予報に添える「今日の一言」を日本語で1文だけ返してください。',
+    '自然で読みやすい文章にしてください。前置きや見出しは不要です。',
     '',
     JSON.stringify(days[0]),
   ].join('\n');
@@ -385,7 +385,7 @@ function generateGeminiWeatherOneLine_(days) {
     muteHttpExceptions: true,
     payload: JSON.stringify({
       contents: [{ role: 'user', parts: [{ text: prompt }] }],
-      generationConfig: { temperature: 0.35, maxOutputTokens: 80 },
+      generationConfig: { temperature: 0.45, maxOutputTokens: 180 },
     }),
   });
 
@@ -401,7 +401,7 @@ function generateGeminiWeatherOneLine_(days) {
     .join('\n')
     .trim();
 
-  return text ? text.replace(/^今日の一言[:：]\s*/, '').split('\n')[0].trim() : '';
+  return text ? text.replace(/^今日の一言[:：]\s*/, '').trim() : '';
 }
 
 function buildWeatherMessage_(dateKey, content, now) {
