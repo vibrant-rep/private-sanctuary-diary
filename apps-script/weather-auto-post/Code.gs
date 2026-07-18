@@ -370,7 +370,7 @@ function generateGeminiWeatherOneLine_(days) {
   const apiKey = PropertiesService.getScriptProperties().getProperty('GEMINI_API_KEY');
   if (!apiKey) return '';
 
-  const model = PropertiesService.getScriptProperties().getProperty('GEMINI_MODEL') || 'gemini-2.5-flash';
+  const model = PropertiesService.getScriptProperties().getProperty('GEMINI_MODEL') || 'gemini-3.1-flash-lite';
   const prompt = [
     '以下の天気データを見て、日記の天気予報に添える「今日の一言」を日本語で1文だけ作ってください。',
     '条件: 35文字以内。絵文字は最大1つ。服装名は書かない。体感温度の数値は書かない。前置き不要。',
