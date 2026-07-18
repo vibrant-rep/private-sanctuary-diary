@@ -1484,6 +1484,21 @@
                 }
                 handleForceSync();
             };
+            const getMessageKindMeta = (msg) => {
+                if (msg.autoType === 'weather-outfit' || msg.source === 'apps-script-weather') {
+                    return { label: 'WEATHER LOG', icon: 'cloud-sun', className: 'bg-sky-950/50 border-sky-800 text-sky-300' };
+                }
+                if (msg.type === 'image') {
+                    return { label: 'IMAGE LOG', icon: 'image', className: 'bg-violet-950/50 border-violet-800 text-violet-400' };
+                }
+                if (msg.type === 'video') {
+                    return { label: 'VIDEO LOG', icon: 'video', className: 'bg-cyan-950/50 border-cyan-800 text-cyan-300' };
+                }
+                if (extractUrls(msg.content || '').length > 0) {
+                    return { label: 'ARTICLE LOG', icon: 'newspaper', className: 'bg-amber-950/50 border-amber-800 text-amber-300' };
+                }
+                return { label: 'TEXT LOG', icon: 'calendar-days', className: 'bg-indigo-950/50 border-indigo-800 text-indigo-400' };
+            };
 
             const UrlCards = ({ content }) => {
                 const urls = extractUrls(content);
@@ -2336,7 +2351,9 @@
                                         </div>
                                     ) : (
                                         <div className="space-y-4 md:space-y-6 max-w-3xl mx-auto">
-                                            {activeDayNotes.map((msg) => (
+                                            {activeDayNotes.map((msg) => {
+                                                const kindMeta = getMessageKindMeta(msg);
+                                                return (
                                                 <div
                                                     key={msg.id}
                                                     ref={node => {
@@ -2353,25 +2370,15 @@
                                                     }`}
                                                 >
                                                     <div className="shrink-0 mt-0.5">
-                                                        {msg.type === 'image' ? (
-                                                            <div className="w-8 h-8 md:w-9 md:h-9 rounded-xl bg-violet-950/50 border border-violet-800 text-violet-400 flex items-center justify-center">
-                                                                <i data-lucide="image" className="w-4 h-4"></i>
-                                                            </div>
-                                                        ) : msg.type === 'video' ? (
-                                                            <div className="w-8 h-8 md:w-9 md:h-9 rounded-xl bg-cyan-950/50 border border-cyan-800 text-cyan-300 flex items-center justify-center">
-                                                                <i data-lucide="video" className="w-4 h-4"></i>
-                                                            </div>
-                                                        ) : (
-                                                            <div className="w-8 h-8 md:w-9 md:h-9 rounded-xl bg-indigo-950/50 border border-indigo-800 text-indigo-400 flex items-center justify-center">
-                                                                <i data-lucide="calendar-days" className="w-4 h-4"></i>
-                                                            </div>
-                                                        )}
+                                                        <div className={`w-8 h-8 md:w-9 md:h-9 rounded-xl border flex items-center justify-center ${kindMeta.className}`}>
+                                                            <i data-lucide={kindMeta.icon} className="w-4 h-4"></i>
+                                                        </div>
                                                     </div>
 
                                                     <div className="flex-1 space-y-1 overflow-hidden">
                                                         <div className="flex items-center justify-between">
                                                             <span className="text-[9px] md:text-[10px] font-bold tracking-wider text-slate-500">
-                                                                {msg.type === 'image' ? 'IMAGE LOG' : msg.type === 'video' ? 'VIDEO LOG' : 'TEXT LOG'}
+                                                                {kindMeta.label}
                                                             </span>
                                                             <span className="text-[9px] md:text-[10px] text-slate-600">{msg.timestamp}</span>
                                                         </div>
@@ -2449,7 +2456,8 @@
                                                         </button>
                                                     </div>
                                                 </div>
-                                            ))}
+                                                );
+                                            })}
                                             <div ref={messagesEndRef} />
                                         </div>
                                     )}

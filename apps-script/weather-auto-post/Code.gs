@@ -346,7 +346,7 @@ function buildRuleBasedPostContent_(days, now, weather, oneLine) {
   if (oneLine) lines.push('', `今日の一言: ${oneLine}`);
 
   days.forEach(day => {
-    lines.push('', `## ${day.label}（${formatDateWithWeekday_(day.dateKey)}）`);
+    lines.push('', `## ${day.label}: ${formatDateWithWeekday_(day.dateKey)}`);
     if (day.dayAdvice) lines.push(day.dayAdvice);
     lines.push('');
     lines.push('| 時間帯 | 天気 | 気温 | メモ | 服装 |');
