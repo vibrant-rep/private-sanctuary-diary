@@ -1486,18 +1486,18 @@
             };
             const getMessageKindMeta = (msg) => {
                 if (msg.autoType === 'weather-outfit' || msg.source === 'apps-script-weather') {
-                    return { label: 'WEATHER LOG', icon: 'cloud-sun', className: 'bg-sky-950/50 border-sky-800 text-sky-300' };
+                    return { label: 'WEATHER LOG', imageSrc: 'assets/post-icons/weather.png', className: 'bg-sky-950/50 border-sky-800' };
                 }
                 if (msg.type === 'image') {
-                    return { label: 'IMAGE LOG', icon: 'image', className: 'bg-violet-950/50 border-violet-800 text-violet-400' };
+                    return { label: 'IMAGE LOG', imageSrc: 'assets/post-icons/image.png', className: 'bg-violet-950/50 border-violet-800' };
                 }
                 if (msg.type === 'video') {
-                    return { label: 'VIDEO LOG', icon: 'video', className: 'bg-cyan-950/50 border-cyan-800 text-cyan-300' };
+                    return { label: 'VIDEO LOG', imageSrc: 'assets/post-icons/video.png', className: 'bg-cyan-950/50 border-cyan-800' };
                 }
-                if (extractUrls(msg.content || '').length > 0) {
-                    return { label: 'ARTICLE LOG', icon: 'newspaper', className: 'bg-amber-950/50 border-amber-800 text-amber-300' };
+                if (messageHasArticleLink(msg)) {
+                    return { label: 'ARTICLE LOG', imageSrc: 'assets/post-icons/article.png', className: 'bg-amber-950/50 border-amber-800' };
                 }
-                return { label: 'TEXT LOG', icon: 'calendar-days', className: 'bg-indigo-950/50 border-indigo-800 text-indigo-400' };
+                return { label: 'TEXT LOG', imageSrc: 'assets/post-icons/text.png', className: 'bg-indigo-950/50 border-indigo-800' };
             };
 
             const UrlCards = ({ content }) => {
@@ -2370,8 +2370,8 @@
                                                     }`}
                                                 >
                                                     <div className="shrink-0 mt-0.5">
-                                                        <div className={`w-8 h-8 md:w-9 md:h-9 rounded-xl border flex items-center justify-center ${kindMeta.className}`}>
-                                                            <i data-lucide={kindMeta.icon} className="w-4 h-4"></i>
+                                                        <div className={`w-10 h-10 md:w-11 md:h-11 rounded-xl border flex items-center justify-center overflow-hidden ${kindMeta.className}`}>
+                                                            <img src={kindMeta.imageSrc} alt="" className="w-full h-full object-contain p-0.5" />
                                                         </div>
                                                     </div>
 
