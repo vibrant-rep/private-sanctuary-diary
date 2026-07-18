@@ -334,19 +334,19 @@ function buildDayAdvice_(periods) {
 }
 
 function buildPostContent_(days, now, weather) {
-  const ruleBased = buildRuleBasedPostContent_(days, now, weather);
-  const aiText = generateGeminiWeatherComment_(ruleBased, days, weather.attribution || CONFIG.attribution);
-  return aiText || ruleBased;
+  const oneLine = generateGeminiWeatherOneLine_(days);
+  return buildRuleBasedPostContent_(days, now, weather, oneLine);
 }
 
-function buildRuleBasedPostContent_(days, now, weather) {
+function buildRuleBasedPostContent_(days, now, weather, oneLine) {
   const lines = [
     `天気予報（${CONFIG.locationName}）`,
     `自動投稿: ${Utilities.formatDate(now, CONFIG.timezone, 'yyyy/MM/dd HH:mm')}`,
   ];
+  if (oneLine) lines.push('', `今日の一言: ${oneLine}`);
 
   days.forEach(day => {
-    lines.push('', `## ${day.label}（${day.dateKey}）`);
+    lines.push('', `## ${day.label}（${formatDateWithWeekday_(day.dateKey)}）`);
     if (day.dayAdvice) lines.push(day.dayAdvice);
     lines.push('');
     lines.push('| 時間帯 | 天気 | 気温 | メモ | 服装 |');
@@ -366,30 +366,16 @@ function buildRuleBasedPostContent_(days, now, weather) {
   return lines.join('\n');
 }
 
-function generateGeminiWeatherComment_(ruleBased, days, attribution) {
+function generateGeminiWeatherOneLine_(days) {
   const apiKey = PropertiesService.getScriptProperties().getProperty('GEMINI_API_KEY');
   if (!apiKey) return '';
 
   const model = PropertiesService.getScriptProperties().getProperty('GEMINI_MODEL') || 'gemini-2.5-flash';
   const prompt = [
-    '以下の天気データと機械判定をもとに、日記へ自動投稿する文章を日本語で作ってください。',
-    '条件:',
-    '- 今日と明日を分ける',
-    '- 朝・昼・晩ごとに天気、気温、メモ、服装を簡潔に残す',
-    '- 降水確率は天気列に「晴れ（降水20%）」のようにパーセントで添える',
-    '- タイトルは「天気予報」にする',
-    '- 体感温度という言葉と数値は出さない',
-    '- 雨がほぼない、雨なし、雨0mmのような雨なし表現は出さない',
-    '- 湿度、風、雨は必要なときだけ短い体感語にする',
-    '- 気温が28度以上の時間帯で「さらっと」「普通」は使わない',
-    '- 服装は体感温度をもとに判定する。ただし体感温度の数値は出さない',
-    '- 服装は「Tシャツ」「ジャケット＋Tシャツ」のように短く書く',
-    '- 通気性重視、水分補給、日差し対策、脱ぎ着しやすい、などの補足文は書かない',
-    '- 絵文字を使って視認性を上げる',
-    '- Markdownの表を使ってよい',
-    '- 余計な前置きは不要',
+    '以下の天気データを見て、日記の天気予報に添える「今日の一言」を日本語で1文だけ作ってください。',
+    '条件: 35文字以内。絵文字は最大1つ。服装名は書かない。体感温度の数値は書かない。前置き不要。',
     '',
-    ruleBased,
+    JSON.stringify(days[0]),
   ].join('\n');
 
   const url = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent?key=${encodeURIComponent(apiKey)}`;
@@ -399,7 +385,7 @@ function generateGeminiWeatherComment_(ruleBased, days, attribution) {
     muteHttpExceptions: true,
     payload: JSON.stringify({
       contents: [{ role: 'user', parts: [{ text: prompt }] }],
-      generationConfig: { temperature: 0.25, maxOutputTokens: 900 },
+      generationConfig: { temperature: 0.35, maxOutputTokens: 80 },
     }),
   });
 
@@ -415,7 +401,7 @@ function generateGeminiWeatherComment_(ruleBased, days, attribution) {
     .join('\n')
     .trim();
 
-  return text ? `${text}\n\n${attribution}` : '';
+  return text ? text.replace(/^今日の一言[:：]\s*/, '').split('\n')[0].trim() : '';
 }
 
 function buildWeatherMessage_(dateKey, content, now) {
@@ -516,6 +502,13 @@ function pickRepresentativeWeatherCode_(codes) {
 
 function formatDateKey_(date) {
   return Utilities.formatDate(date, CONFIG.timezone, 'yyyy-MM-dd');
+}
+
+function formatDateWithWeekday_(dateKey) {
+  const [year, month, day] = String(dateKey).split('-').map(Number);
+  const date = new Date(year, month - 1, day);
+  const weekdays = ['日', '月', '火', '水', '木', '金', '土'];
+  return `${dateKey}（${weekdays[date.getDay()]}）`;
 }
 
 function toQueryString_(params) {
